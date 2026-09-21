@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Evim</title>
+<meta name="description" content="Kiracı ve ev sahibinin aynı sayfada olduğu kira yönetim prototipi.">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Manrope:wght@400..800&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z' fill='none' stroke='%23A8492A' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<a class="skip" href="#screen">İçeriğe geç</a>
+
+<div class="stage">
+  <aside class="shell" id="shell" aria-label="Gezinme paneli"></aside>
+
+  <div class="phone">
+    <main class="screen" id="screen" tabindex="-1"></main>
+    <nav class="tabbar" id="tabbar" aria-label="Ana menü"></nav>
+    <div id="banners" aria-live="polite"></div>
+    <div id="layer"></div>
+    <div id="tour"></div>
+  </div>
+</div>
+
+<div class="sr" id="live" aria-live="polite" role="status"></div>
+
+<script type="module" src="assets/js/main.js"></script>
+<noscript><p style="padding:24px;font-family:system-ui">Evim prototipi çalışmak için JavaScript gerektirir.</p></noscript>
+</body>
+</html>
