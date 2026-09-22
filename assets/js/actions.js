@@ -5,6 +5,8 @@ import { go, openSheet, closeSheet, current, setParams } from './router.js';
 import { P, period, statusOf, remaining, yearIncome, monthCollection } from './logic.js';
 import { render, refreshLayer } from './render.js';
 import { notify } from './notify.js';
+import { ask } from './confirm.js';
+import { migrate } from './migrate.js';
 import { startTour, nextStep, prevStep, endTour, TOUR } from './tour.js';
 import {
   iso, t0, parse, fmt, fmtFull, monthYear, tl, daysTo, shrink, download, esc, announce
@@ -131,7 +133,8 @@ export const A = {
     notify({ title:'Teklifi kabul ettin', body:'Yeni kira '+fmtFull(parse(p.contractEnd))+' itibarıyla '+tl(p.renewal.amount)+'.', icon:'card' });
   },
 
-  cancelRenewal: d => {
+  cancelRenewal: async d => {
+    if (!await ask({ title:'Teklif geri çekilsin mi?', body:'Kiracı artık teklifi göremez.', ok:'Geri çek' })) return;
     const p = P(d.pid);
     p.renewal = null;
     sysMsg(p, 'Yenileme teklifi geri çekildi');
@@ -139,16 +142,20 @@ export const A = {
   },
 
   /* ---- belgeler ve tutanak ---- */
-  removeDoc: d => {
+  removeDoc: async d => {
     const p = P(d.pid);
     const doc = p.docs.find(x => x.id === d.id);
-    if (!doc || !confirm('“'+doc.name+'” belgesi silinsin mi?')) return;
+    if (!doc) return;
+    if (!await ask({ title:'Belge silinsin mi?', body:'“'+doc.name+'” kalıcı olarak kaldırılır.', ok:'Sil', danger:true })) return;
     p.docs = p.docs.filter(x => x.id !== d.id);
     save(); render();
   },
 
-  removeRoom: d => {
+  removeRoom: async d => {
     const p = P(d.pid);
+    const room = p.inspect.rooms[Number(d.i)];
+    if (!room) return;
+    if (!await ask({ title:room.n+' silinsin mi?', body:'Odanın notu ve fotoğrafları silinir; tutanak onayları sıfırlanır.', ok:'Sil', danger:true })) return;
     p.inspect.rooms.splice(Number(d.i), 1);
     p.inspect.tenantOk = false; p.inspect.landlordOk = false;
     save(); render();
@@ -240,16 +247,17 @@ export const A = {
 
   theme: d => { setTheme(d.v); render(); },
 
-  reset: () => {
-    if (!confirm('Demo verisi sıfırlansın mı? Girdiğin her şey silinir.')) return;
+  reset: async () => {
+    if (!await ask({ title:'Demo sıfırlansın mı?', body:'Girdiğin her şey silinir ve örnek veri yeniden yüklenir.', ok:'Sıfırla', danger:true })) return;
     resetState();
     go('/kiraci', { replace:true });
     render();
     notify({ title:'Sıfırlandı', body:'Demo verisi yeniden yüklendi.', icon:'home' }, false);
   },
 
-  removeProp: d => {
-    if (!confirm('Bu ev portföyden kaldırılsın mı?')) return;
+  removeProp: async d => {
+    const name = P(d.pid)?.name || 'Bu ev';
+    if (!await ask({ title:name+' kaldırılsın mı?', body:'Evin ödemeleri, talepleri, mesajları ve belgeleri de silinir.', ok:'Kaldır', danger:true })) return;
     delete S.props[d.pid];
     S.order = S.order.filter(x => x !== d.pid);
     if (S.myHome === d.pid) S.myHome = S.order[0];
@@ -562,8 +570,8 @@ export async function onChangeField(ev){
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      if (!parsed || parsed.v !== VERSION || !parsed.props || !parsed.order) throw new Error('bad');
-      replaceState(parsed);
+      if (!parsed || !parsed.props || !parsed.order || (parsed.v || 1) > VERSION) throw new Error('bad');
+      replaceState(migrate(parsed));
       go('/kiraci', { replace:true });
       render();
       notify({ title:'Veri yüklendi', body:'Dosyadaki durum geri yüklendi.', icon:'doc' }, false);

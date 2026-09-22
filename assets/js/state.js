@@ -1,9 +1,10 @@
 /* Uygulama durumu: demo verisi, kalıcılık ve tema. */
 
 import { t0, iso, add, addM, mkey, parse, DAY } from './util.js';
+import { VERSION, LEGACY_KEYS, migrate } from './migrate.js';
 
-export const KEY = 'evim-v2';
-export const VERSION = 2;
+export { VERSION };
+export const KEY = 'evim';
 
 export const STEPS = ['Açıldı','Görüldü','İşlemde','Çözüldü'];
 export const CATS = ['Arıza','Tadilat','Ek talep'];
@@ -146,18 +147,53 @@ export function seed(){
   };
 }
 
+/** Kayıt yeni bir uygulama sürümünden geliyorsa üzerine yazmamak için. */
+let readOnly = false;
+/** Açılışta ne olduğunu kullanıcıya söylemek için (main.js okur). */
+export const bootInfo = { migratedFrom:null, newer:false, corrupt:false };
+
+function read(key){
+  try { return JSON.parse(localStorage.getItem(key)); } catch(e){ return undefined; }
+}
+
 function load(){
-  try {
-    const raw = JSON.parse(localStorage.getItem(KEY));
-    if (raw && raw.v === VERSION && raw.props && raw.order) return raw;
-  } catch(e){ /* bozuk kayıt: demo veriye dön */ }
+  // v2 sürümü 'evim-v2' anahtarını kullanıyordu; önce onu tek anahtara taşı.
+  const keys = [KEY, 'evim-v2', ...LEGACY_KEYS];
+  for (const key of keys){
+    const raw = read(key);
+    if (raw === undefined){ if (key === KEY && localStorage.getItem(KEY)) bootInfo.corrupt = true; continue; }
+    if (!raw || !raw.props || !raw.order) continue;
+
+    const v = raw.v || 1;
+    if (v > VERSION){
+      // Daha yeni bir sürümün verisi: okunur ama asla üzerine yazılmaz.
+      readOnly = true;
+      bootInfo.newer = true;
+      return raw;
+    }
+    if (v === VERSION && key === KEY) return raw;
+
+    try {
+      // Geçişten önce ham veriyi yedekle.
+      try { localStorage.setItem('evim-yedek-v' + v, JSON.stringify(raw)); } catch(e){}
+      const next = migrate(raw);
+      bootInfo.migratedFrom = v;
+      try { localStorage.setItem(KEY, JSON.stringify(next)); } catch(e){}
+      return next;
+    } catch(e){
+      console.error('Veri geçişi başarısız', e);
+      bootInfo.corrupt = true;
+    }
+  }
   return seed();
 }
 
 export let S = load();
+export function isReadOnly(){ return readOnly; }
 
 /** Kalıcılık. Kota dolarsa fotoğrafları atıp yeniden dener. */
 export function save(){
+  if (readOnly) return false;
   try {
     localStorage.setItem(KEY, JSON.stringify(S));
     return true;
@@ -178,6 +214,7 @@ export function save(){
 
 /** Durumu tamamen değiştirir (sıfırlama ve içe aktarma için). */
 export function replaceState(next){
+  readOnly = false;
   S = next;
   save();
   applyTheme();

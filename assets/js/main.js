@@ -1,10 +1,11 @@
 /* Uygulamayı ayağa kaldırır: rota, olay dinleyicileri, klavye ve açılış bildirimleri. */
 
-import { S, ui, save, applyTheme } from './state.js';
+import { S, ui, save, applyTheme, bootInfo } from './state.js';
 import { start, onChange, go, closeSheet, current, back } from './router.js';
 import { render } from './render.js';
 import { A, onSubmit, onInput, onChangeField } from './actions.js';
 import { trapFocus } from './sheets.js';
+import { handleKey as handleConfirmKey } from './confirm.js';
 import { reminders } from './logic.js';
 import { notify } from './notify.js';
 import { up } from './util.js';
@@ -37,6 +38,7 @@ const TAB_KEYS = {
 };
 
 document.addEventListener('keydown', ev => {
+  if (handleConfirmKey(ev)) return;
   trapFocus(ev);
 
   if (ev.key === 'Escape'){
@@ -81,6 +83,12 @@ phone.addEventListener('touchend', ev => {
 
 onChange(() => render());
 start();
+
+if (bootInfo.migratedFrom){
+  setTimeout(() => notify({ title:'Verin güncellendi', body:'Kayıtlı verin yeni sürüme taşındı; eski hali yedek olarak saklandı.', icon:'doc' }, false), 400);
+} else if (bootInfo.newer){
+  setTimeout(() => notify({ title:'Salt okunur mod', body:'Bu veri uygulamanın daha yeni bir sürümüyle kaydedilmiş. Değişiklikler kaydedilmeyecek.', icon:'doc' }, false), 400);
+}
 
 if (!S.seenHint){
   S.seenHint = true;
