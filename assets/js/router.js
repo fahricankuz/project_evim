@@ -26,7 +26,9 @@ const LANDLORD_TABS = {
 export const TENANT_PATH = { panel:'/kiraci', pay:'/kiraci/odemeler', req:'/kiraci/talepler', msg:'/kiraci/mesajlar', docs:'/kiraci/belgeler', agenda:'/kiraci/takvim' };
 export const LANDLORD_PATH = { portfolio:'/ev-sahibi', lreq:'/ev-sahibi/talepler', lmsg:'/ev-sahibi/mesajlar', report:'/ev-sahibi/rapor', agenda:'/ev-sahibi/takvim' };
 
-export const PROP_SUBS = [['ozet','Özet'],['odeme','Ödemeler'],['talep','Talepler'],['mesaj','Mesajlar'],['belge','Belgeler'],['tutanak','Tutanak']];
+export const PROP_SUBS = [['ozet','Özet'],['odeme','Ödemeler'],['talep','Talepler'],['mesaj','Mesajlar'],['belge','Belgeler'],['tutanak','Tutanak'],['gider','Giderler']];
+/** Şeritte görünmeyen ama adresle açılan bölümler. */
+const EXTRA_SUBS = ['cikis'];
 
 function parseQuery(s){
   const out = {};
@@ -63,14 +65,14 @@ export function parseRoute(hash){
     if (seg[1] === 'ev'){
       r.tab = 'portfolio';
       r.pid = S.props[seg[2]] ? seg[2] : S.order[0];
-      r.sub = PROP_SUBS.some(s => s[0] === seg[3]) ? seg[3] : 'ozet';
+      r.sub = PROP_SUBS.some(s => s[0] === seg[3]) || EXTRA_SUBS.includes(seg[3]) ? seg[3] : 'ozet';
     } else {
       r.tab = LANDLORD_TABS[seg[1] || ''] || 'portfolio';
     }
   } else {
     r.role = 'tenant';
     r.tab = TENANT_TABS[seg[1] || ''] || 'panel';
-    if (r.tab === 'docs' && seg[2] === 'tutanak') r.sub = 'tutanak';
+    if (r.tab === 'docs' && (seg[2] === 'tutanak' || seg[2] === 'cikis')) r.sub = seg[2];
     // /kiraci/talepler/<id> doğrudan talep detayını açar.
     if (r.tab === 'req' && seg[2]){ r.reqId = seg[2]; r.base = '/kiraci/talepler'; if (!r.sheet) r.sheet = 'talep'; }
   }
@@ -158,6 +160,7 @@ export function screenMap(){
     { label:'Mesajlar', path:'/kiraci/mesajlar', icon:'chat' },
     { label:'Belgeler', path:'/kiraci/belgeler', icon:'doc' },
     { label:'Giriş tutanağı', path:'/kiraci/belgeler/tutanak', icon:'key', depth:1 },
+    { label:'Çıkış ve depozito', path:'/kiraci/belgeler/cikis', icon:'key', depth:1 },
     { label:'Takvim', path:'/kiraci/takvim', icon:'calendar' }
   ];
   const landlord = [

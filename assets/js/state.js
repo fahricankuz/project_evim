@@ -10,9 +10,20 @@ export const STEPS = ['Açıldı','Görüldü','İşlemde','Çözüldü'];
 export const CATS = ['Arıza','Tadilat','Ek talep'];
 export const DOC_CATS = ['Kira sözleşmesi','Tahliye taahhütnamesi','DASK poliçesi','Konut sigortası','Giriş–çıkış tutanağı','Fatura ve aidat','Diğer'];
 export const COST_OPTS = ['Belirlenmedi','Ev sahibi','Kiracı','Paylaşımlı'];
+export const EXPENSE_CATS = ['Tamir ve bakım','Emlak vergisi','DASK ve sigorta','Aidat','Yönetim ve komisyon','Vergi ve harç','Diğer'];
+export const CONDITIONS = ['Aynı','Yıpranmış','Hasarlı','Eksik'];
+export const DEDUCTION_PRESETS = ['Temizlik','Boya','Onarım','Eksik eşya','Ödenmemiş fatura','Ödenmemiş aidat'];
 
-/** Sıfırdan demo verisi üretir; tüm tarihler bugüne göredir. */
+/**
+ * Sıfırdan demo verisi üretir; tüm tarihler bugüne göredir.
+ * Temel kurgu v2 biçiminde yazılır ve geçiş zincirinden geçirilir —
+ * böylece geçişler her demo açılışında da sınanmış olur.
+ */
 export function seed(){
+  return enrich(migrate(baseSeed()));
+}
+
+function baseSeed(){
   const t = t0(), now = Date.now();
 
   const START = { moda: iso(add(t,-313)), cihangir: iso(add(t,-195)), atasehir: iso(add(t,-337)) };
@@ -135,7 +146,7 @@ export function seed(){
   };
 
   return {
-    v: VERSION,
+    v: 2,
     myHome:'moda',
     props:{ moda, cihangir, atasehir },
     order:['moda','cihangir','atasehir'],
@@ -154,6 +165,46 @@ export const bootInfo = { migratedFrom:null, newer:false, corrupt:false };
 
 function read(key){
   try { return JSON.parse(localStorage.getItem(key)); } catch(e){ return undefined; }
+}
+
+/** v3 ile gelen alanlar için örnek içerik. */
+function enrich(d){
+  const t = t0(), now = Date.now();
+  const { moda, cihangir, atasehir } = d.props;
+  const y = t.getFullYear();
+
+  // Cihangir'de iki kiracı: ev arkadaşları.
+  cihangir.tenants.push({ id:'t2', name:'[Ev arkadaşı]', phone:'05000000004', email:'' });
+  cihangir.msgs.push({ from:'tenant', by:'t2', text:'Aspiratör için ben de buradayım, hafta içi akşam uygun.', at: now - 20*3600000 });
+
+  // Gider defteri.
+  moda.value = 6500000;
+  moda.expenses = [
+    { id:'e1', cat:'Emlak vergisi', amount:4200, date: y+'-05-20', note:'1. taksit' },
+    { id:'e2', cat:'DASK ve sigorta', amount:1850, date: iso(add(t,-245)), note:'DASK poliçesi' },
+    { id:'e3', cat:'Tamir ve bakım', amount:2400, date: iso(add(t,-4)), note:'Kombi servisi', reqId:'r1' }
+  ];
+  cihangir.value = 8200000;
+  cihangir.expenses = [
+    { id:'e4', cat:'Emlak vergisi', amount:5100, date: y+'-05-20', note:'1. taksit' },
+    { id:'e5', cat:'Yönetim ve komisyon', amount:41000, date: cihangir.startDate, note:'Emlakçı komisyonu' }
+  ];
+  atasehir.value = 5400000;
+  atasehir.expenses = [
+    { id:'e6', cat:'Emlak vergisi', amount:3300, date: y+'-05-20', note:'1. taksit' }
+  ];
+
+  // Kombi talebi: iki teklif, biri seçildi, fatura işlendi.
+  const r1 = moda.requests.find(r => r.id === 'r1');
+  r1.quotes = [
+    { id:'q1', vendor:'Yetkili servis', phone:'05000000011', amount:2400, note:'Genleşme tankı + basınç ayarı', chosen:true },
+    { id:'q2', vendor:'Mahalle ustası', phone:'05000000012', amount:1900, note:'Yalnızca basınç ayarı', chosen:false }
+  ];
+  r1.invoice = { amount:2400, name:'servis_faturasi.pdf', date: iso(add(t,-4)), expenseId:'e3' };
+  r1.log.push({ at: now - 4*86400000, text:'Teklif seçildi: Yetkili servis · ₺2.400' });
+
+  d.lang = 'tr';
+  return d;
 }
 
 function load(){

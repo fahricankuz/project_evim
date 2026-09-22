@@ -2,7 +2,11 @@
 
 import { S, ui, save, reset as resetState, replaceState, setTheme, seed, VERSION, STEPS } from './state.js';
 import { go, openSheet, closeSheet, current, setParams } from './router.js';
-import { P, period, statusOf, remaining, yearIncome, monthCollection } from './logic.js';
+import {
+  P, period, statusOf, remaining, yearIncome, monthCollection, rentAt, normalize, tenantsLabel,
+  meTenant, senderName, unpaid, moveOutSummary, yearNumbers, sum
+} from './logic.js';
+import { estimate } from './tax.js';
 import { render, refreshLayer } from './render.js';
 import { notify } from './notify.js';
 import { ask } from './confirm.js';
@@ -108,7 +112,7 @@ export const A = {
       at: Date.now()
     });
     save(); render();
-    notify({ title:'Hatırlatma gönderildi', body:p.tenant.name+' için nazik bir mesaj iletildi.', icon:'chat' });
+    notify({ title:'Hatırlatma gönderildi', body:tenantsLabel(p)+' için nazik bir mesaj iletildi.', icon:'chat' });
   },
 
   /* ---- yenileme ---- */
@@ -128,6 +132,10 @@ export const A = {
   acceptRenewal: d => {
     const p = P(d.pid);
     p.renewal.status = 'accepted';
+    // Yeni tutar sözleşme bitişinden itibaren geçerli; kira geçmişine yazılır.
+    p.rentHistory = (p.rentHistory || []).filter(h => h.from !== p.contractEnd);
+    p.rentHistory.push({ from:p.contractEnd, amount:p.renewal.amount, note:'Yenileme · TÜFE %'+p.renewal.cpi });
+    normalize(p);
     sysMsg(p, 'Yenileme teklifi kabul edildi: '+tl(p.renewal.amount));
     save(); render();
     notify({ title:'Teklifi kabul ettin', body:'Yeni kira '+fmtFull(parse(p.contractEnd))+' itibarıyla '+tl(p.renewal.amount)+'.', icon:'card' });
@@ -193,32 +201,42 @@ export const A = {
   exportChat: d => {
     const p = P(d.pid);
     const body = p.name+' · '+p.addr+'\n\n' + p.msgs.map(m =>
-      new Date(m.at).toLocaleString('tr-TR')+' · ' +
-      (m.from === 'tenant' ? p.tenant.name : m.from === 'landlord' ? p.landlord.name : 'Sistem')+': '+m.text).join('\n');
+      new Date(m.at).toLocaleString('tr-TR')+' · '+senderName(p, m)+': '+m.text).join('\n');
     openText('Yazışma dökümü', body);
   },
 
   shareReport: () => {
-    const yi = yearIncome();
-    const body = yi.year+' yılı konut kira geliri özeti\n\n' +
-      S.order.map(id => { const p = P(id); return p.name+' ('+p.addr+'): '+tl(yi.per[id]); }).join('\n') +
-      '\n\nToplam: '+tl(yi.total) +
-      '\n\nNot: Onaylanmış ve kısmi ödemelerden hesaplanmıştır. Beyan için mali müşavirinize danışın.';
+    const year = String(ui.reportYear || new Date().getFullYear());
+    const yn = yearNumbers(year);
+    const e = estimate(yn.gross, yn.exp, { year:Number(year), noExemption:!!ui.noExemption });
+    const body = year+' yılı konut kira geliri özeti\n\n' +
+      yn.rows.map(r => { const p = P(r.id); return p.name+' ('+p.addr+')\n  Tahsil edilen: '+tl(r.gross)+'  ·  Giderler: '+tl(r.exp); }).join('\n') +
+      '\n\nToplam tahsil edilen: '+tl(yn.gross) +
+      '\nToplam belgeli gider: '+tl(yn.exp) +
+      '\nİstisna ('+e.rates.year+'): '+(ui.noExemption ? 'uygulanmıyor' : tl(e.istisna)) +
+      (e.belowExemption ? '\n\nGelir istisna tutarının altında.' :
+        '\n\nTahmini vergi — götürü gider: '+tl(e.goturu.tax)+' · gerçek gider: '+tl(e.gercek.tax) +
+        '\nDaha avantajlı yöntem: '+(e.best === 'gercek' ? 'gerçek gider' : 'götürü gider')) +
+      (e.rates.approx ? '\n\nUyarı: '+year+' oranları eklenmediği için '+e.rates.year+' oranları kullanıldı.' : '') +
+      '\n\nNot: Onaylanmış ve kısmi ödemelerden hesaplanmıştır. Tahmindir; beyan için mali müşavirinize danışın.';
     openText('Beyanname özeti', body);
   },
 
   exportCsv: () => {
-    const rows = [['Ev','Ay','Durum','Tutar','Ödeme tarihi']];
+    const rows = [['Tür','Ev','Dönem / tarih','Durum / kategori','Tutar','Açıklama']];
     S.order.forEach(id => {
       const p = P(id);
       Object.keys(p.pay).sort().forEach(k => {
         const r = p.pay[k];
-        rows.push([p.name, k, r.status, r.amount != null ? r.amount : p.rent, r.date || '']);
+        rows.push(['Ödeme', p.name, k, r.status, r.amount != null ? r.amount : rentAt(p, k), r.date || '']);
+      });
+      (p.expenses || []).slice().sort((a, b) => a.date < b.date ? -1 : 1).forEach(e => {
+        rows.push(['Gider', p.name, e.date, e.cat, e.amount, e.note || '']);
       });
     });
     const csv = rows.map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\n');
-    download('evim-kira-gecmisi.csv', '﻿'+csv, 'text/csv;charset=utf-8');
-    notify({ title:'CSV indirildi', body:'Kira geçmişi dosyası hazırlandı.', icon:'chart' }, false);
+    download('evim-kayitlar.csv', '\uFEFF'+csv, 'text/csv;charset=utf-8');
+    notify({ title:'CSV indirildi', body:'Ödemeler ve giderler dosyası hazırlandı.', icon:'chart' }, false);
   },
 
   exportData: () => {
@@ -291,12 +309,121 @@ export const A = {
     notify(map[d.v]);
   },
 
+  /* ---- kiracılar ---- */
+  removeTenant: async d => {
+    const p = P(d.pid);
+    const t = p.tenants.find(x => x.id === d.id);
+    if (!t) return;
+    if (!await ask({ title:t.name+' evden çıkarılsın mı?', body:'Bu kiracı artık evin ödemelerini, taleplerini ve yazışmalarını göremez. Geçmiş kayıtlar korunur.', ok:'Çıkar', danger:true })) return;
+    p.tenants = p.tenants.filter(x => x.id !== d.id);
+    sysMsg(p, t.name+' evden çıkarıldı');
+    save(); render();
+  },
+
+  /* ---- teklifler ---- */
+  chooseQuote: d => {
+    const p = P(d.pid), r = reqOf(p, d.id);
+    r.quotes.forEach(q => { q.chosen = q.id === d.q; });
+    const q = r.quotes.find(x => x.chosen);
+    logReq(r, 'Teklif seçildi: '+q.vendor+' · '+tl(q.amount));
+    sysMsg(p, 'Talep için usta seçildi: '+q.vendor+' ('+tl(q.amount)+') · '+r.title);
+    if (r.status < 2){ r.status = 2; logReq(r, 'Durum: '+STEPS[2]); }
+    save(); render();
+    notify({ title:'Usta seçildi', body:q.vendor+' · '+tl(q.amount)+'. Kiracıya bildirildi.', icon:'wrench' });
+  },
+
+  removeQuote: d => {
+    const p = P(d.pid), r = reqOf(p, d.id);
+    r.quotes = r.quotes.filter(q => q.id !== d.q);
+    save(); render();
+  },
+
+  /* ---- giderler ---- */
+  removeExpense: async d => {
+    const p = P(d.pid);
+    const e = p.expenses.find(x => x.id === d.id);
+    if (!e) return;
+    if (!await ask({ title:'Gider silinsin mi?', body:e.cat+' · '+tl(e.amount), ok:'Sil', danger:true })) return;
+    p.expenses = p.expenses.filter(x => x.id !== d.id);
+    // Talep faturasına bağlıysa bağlantıyı kopar.
+    p.requests.forEach(r => { if (r.invoice && r.invoice.expenseId === d.id) r.invoice.expenseId = null; });
+    save(); closeSheet(); render();
+  },
+
+  /* ---- çıkış ---- */
+  addUnpaidDeduction: d => {
+    const p = P(d.pid), due = unpaid(p);
+    if (!due.total) return;
+    p.moveOut.deductions.push({
+      id:'k'+Date.now(), kind:'rent', label:'Ödenmemiş kira', amount:due.total,
+      note: due.months.map(m => monthYear(m.key)+' '+tl(m.owed)).join(', ')
+    });
+    resetMoveOutApprovals(p);
+    save(); render();
+  },
+
+  removeDeduction: d => {
+    const p = P(d.pid);
+    p.moveOut.deductions = p.moveOut.deductions.filter(x => x.id !== d.id);
+    resetMoveOutApprovals(p);
+    save(); render();
+  },
+
+  removeExitShot: d => {
+    const p = P(d.pid);
+    p.moveOut.rooms[Number(d.i)].shots.splice(Number(d.j), 1);
+    resetMoveOutApprovals(p);
+    save(); render();
+  },
+
+  approveMoveOut: d => {
+    const p = P(d.pid), mo = p.moveOut;
+    if (ui.role === 'tenant') mo.tenantOk = true; else mo.landlordOk = true;
+    const both = mo.tenantOk && mo.landlordOk;
+    sysMsg(p, 'Çıkış hesabı '+(ui.role === 'tenant' ? 'kiracı' : 'ev sahibi')+' tarafından onaylandı'+(both ? ' · iade: '+tl(moveOutSummary(p).refund) : ''));
+    save(); render();
+    notify({ title:'Çıkış hesabı onaylandı', body: both ? 'İki taraf da onayladı; iade tutarı kesinleşti.' : 'Karşı tarafın onayı bekleniyor.', icon:'key' });
+  },
+
+  cancelMoveOut: async d => {
+    if (!await ask({ title:'Çıkış süreci iptal edilsin mi?', body:'Çıkış notları, fotoğraflar ve kesintiler silinir.', ok:'İptal et', danger:true })) return;
+    const p = P(d.pid);
+    p.moveOut = null;
+    sysMsg(p, 'Çıkış süreci iptal edildi');
+    save(); render();
+  },
+
+  exportMoveOut: d => {
+    const p = P(d.pid), mo = p.moveOut, sm = moveOutSummary(p);
+    const body = p.name+' · '+p.addr+'\nÇıkış raporu'+(mo.date ? ' · '+fmtFull(parse(mo.date)) : '')+'\n' +
+      'Kiracı: '+tenantsLabel(p)+'\n\n' +
+      'ODALAR\n' + mo.rooms.map(r => {
+        const entry = p.inspect.rooms.find(x => x.n === r.n);
+        return '- '+r.n+': '+(r.condition || 'değerlendirilmedi') +
+          '\n    Giriş: '+(entry ? (entry.note || 'not yok') : 'kayıt yok') +
+          '\n    Çıkış: '+(r.note || 'not yok')+' · '+(r.shots || []).length+' fotoğraf';
+      }).join('\n') +
+      '\n\nKESİNTİLER\n' + (mo.deductions.length ? mo.deductions.map(x => '- '+x.label+': '+tl(x.amount)+(x.note ? ' ('+x.note+')' : '')).join('\n') : '- yok') +
+      '\n\nDepozito: '+tl(sm.deposit)+'\nKesinti toplamı: '+tl(sm.deducted)+'\nİade: '+tl(sm.refund) +
+      (sm.extra ? '\nKiracıdan ayrıca talep: '+tl(sm.extra) : '') +
+      '\n\nKiracı onayı: '+(mo.tenantOk ? 'var' : 'yok')+'\nEv sahibi onayı: '+(mo.landlordOk ? 'var' : 'yok') +
+      (mo.refunded ? '\nİade yapıldı: '+tl(mo.refunded.amount)+' · '+fmtFull(parse(mo.refunded.date)) : '');
+    openText('Çıkış raporu', body);
+  },
+
   /* ---- tur ---- */
   startTour: () => { startTour(); closeSheet(); tourGo(); render(); },
   tourNext: () => { nextStep(); tourGo(); render(); },
   tourPrev: () => { prevStep(); tourGo(); render(); },
   tourEnd: () => { endTour(); render(); }
 };
+
+/** Bir kalem değişince iki tarafın da yeniden onaylaması gerekir. */
+function resetMoveOutApprovals(p){
+  if (!p.moveOut) return;
+  p.moveOut.tenantOk = false;
+  p.moveOut.landlordOk = false;
+}
 
 function openText(title, body){
   ui.text = { title, body };
@@ -317,7 +444,7 @@ export async function onSubmit(ev){
   if (type === 'msg'){
     const text = String(fd.get('text') || '').trim();
     if (!text) return;
-    p.msgs.push({ from: ui.role, text, at: Date.now() });
+    p.msgs.push({ from: ui.role, by: ui.role === 'tenant' ? meTenant(p)?.id : undefined, text, at: Date.now() });
     save(); render();
     document.getElementById('msgIn')?.focus();
     if (ui.role === 'tenant'){
@@ -361,9 +488,10 @@ export async function onSubmit(ev){
     const prev = p.pay[key];
     const already = prev && prev.status === 'partial' ? Number(prev.amount) || 0 : 0;
     const total = already + amount;
+    const due = rentAt(p, key);
 
     const rec = {
-      status: total < p.rent ? 'partial' : 'review',
+      status: total < due ? 'partial' : 'review',
       date: String(fd.get('date') || iso(t0())),
       amount: total,
       receipt: file.name,
@@ -379,7 +507,7 @@ export async function onSubmit(ev){
     notify({
       title: rec.status === 'partial' ? 'Kısmi ödeme kaydedildi' : 'Dekont yüklendi',
       body: rec.status === 'partial'
-        ? tl(p.rent - total)+' bakiye görünüyor; kalanı yükleyince onaya gider.'
+        ? tl(due - total)+' bakiye görünüyor; kalanı yükleyince onaya gider.'
         : 'Ev sahibinin onayı bekleniyor. Onaylanınca haber vereceğiz.',
       icon:'card'
     });
@@ -428,11 +556,14 @@ export async function onSubmit(ev){
   if (type === 'addProp'){
     const id = 'p'+Date.now(), t = t0();
     const name = String(fd.get('name')).trim();
+    const rent = Number(fd.get('rent')) || 0;
     S.props[id] = {
       id, name, addr:String(fd.get('addr')).trim(),
-      tenant:{ name:'Davet bekleniyor', phone:String(fd.get('phone') || '') },
+      tenants:[{ id:'t'+Date.now(), name:'Davet bekleniyor', phone:String(fd.get('phone') || ''), email:'' }],
       landlord: P(S.order[0]).landlord,
-      rent: Number(fd.get('rent')) || 0, dueDay: Number(fd.get('due')) || 1,
+      rent, dueDay: Number(fd.get('due')) || 1,
+      rentHistory:[{ from: iso(t), amount: rent, note:'Sözleşme başlangıcı' }],
+      expenses:[], value:null, moveOut:null,
       aidat:0, aidatPayer:'Kiracı', deposit:0, depositNote:'—',
       startDate: iso(t), contractEnd: iso(new Date(t.getFullYear()+1, t.getMonth(), t.getDate())), dask: iso(new Date(t.getFullYear()+1, t.getMonth(), t.getDate())),
       bills:[], pay:{}, requests:[], msgs:[], docs:[],
@@ -455,18 +586,113 @@ export async function onSubmit(ev){
     return;
   }
 
+  if (type === 'addTenant'){
+    const name = String(fd.get('name')).trim();
+    const email = String(fd.get('email') || '').trim();
+    const phone = String(fd.get('phone') || '').trim();
+    p.tenants.push({ id:'t'+Date.now(), name, email, phone });
+    sysMsg(p, name+' eve kiracı olarak eklendi');
+    save(); closeSheet(); render();
+    const digits = phone.replace(/\D/g, '');
+    notify({
+      title:'Kiracı eklendi',
+      body: email ? name+' için davet '+email+' adresine gönderilecek.' : name+' eklendi. Davet bağlantısını paylaşabilirsin.',
+      icon:'home',
+      actions: digits ? [{ label:'WhatsApp ile davet et', run:() => window.open('https://wa.me/9'+digits.replace(/^9/, '')+'?text='+encodeURIComponent('Merhaba, '+p.name+' için Evim’de ortak panelimize katılır mısın? [davet linki]'), '_blank', 'noopener') }] : undefined
+    });
+    return;
+  }
+
+  if (type === 'quote'){
+    const r = reqOf(p, f.dataset.id);
+    const q = { id:'q'+Date.now(), vendor:String(fd.get('vendor')).trim(), phone:String(fd.get('phone') || '').trim(),
+      amount:Number(fd.get('amount')) || 0, note:String(fd.get('note') || '').trim(), chosen:false };
+    r.quotes = r.quotes || [];
+    r.quotes.push(q);
+    logReq(r, 'Teklif eklendi: '+q.vendor+' · '+tl(q.amount));
+    save(); closeSheet(); render();
+    return;
+  }
+
+  if (type === 'invoice'){
+    const r = reqOf(p, f.dataset.id);
+    const amount = Number(fd.get('amount')) || 0;
+    const date = String(fd.get('date'));
+    const file = f.querySelector('input[type=file]').files[0];
+    let expenseId = null;
+    if (fd.get('toExpense') && r.cost !== 'Kiracı'){
+      expenseId = 'e'+Date.now();
+      p.expenses = p.expenses || [];
+      p.expenses.push({
+        id:expenseId, cat:'Tamir ve bakım', amount: r.cost === 'Paylaşımlı' ? Math.round(amount / 2) : amount,
+        date, note: r.title + (r.cost === 'Paylaşımlı' ? ' (yarı pay)' : ''), reqId:r.id
+      });
+    }
+    r.invoice = { amount, date, name: file ? file.name : 'fatura', expenseId };
+    logReq(r, 'Fatura işlendi: '+tl(amount));
+    sysMsg(p, 'Talep faturası: '+r.title+' · '+tl(amount));
+    save(); closeSheet(); render();
+    notify({ title:'Fatura kaydedildi', body: expenseId ? 'Gider defterine de işlendi.' : 'Gider defterine eklenmedi.', icon:'doc' }, false);
+    return;
+  }
+
+  if (type === 'expense'){
+    p.expenses = p.expenses || [];
+    const data = { cat:String(fd.get('cat')), amount:Number(fd.get('amount')) || 0, date:String(fd.get('date')), note:String(fd.get('note') || '').trim() };
+    const id = f.dataset.id;
+    if (id) Object.assign(p.expenses.find(e => e.id === id), data);
+    else p.expenses.push(Object.assign({ id:'e'+Date.now() }, data));
+    ui.expenseYear = data.date.slice(0, 4);
+    save(); closeSheet(); render();
+    notify({ title: id ? 'Gider güncellendi' : 'Gider eklendi', body:data.cat+' · '+tl(data.amount), icon:'chart' }, false);
+    return;
+  }
+
+  if (type === 'startMoveOut'){
+    p.moveOut = {
+      started: Date.now(), date: String(fd.get('date')),
+      rooms: p.inspect.rooms.map(r => ({ n:r.n, note:'', shots:[], condition:'' })),
+      deductions: [], tenantOk:false, landlordOk:false, refunded:null
+    };
+    sysMsg(p, 'Çıkış süreci başlatıldı · '+fmtFull(parse(p.moveOut.date)));
+    save(); closeSheet(); render();
+    notify({ title:'Çıkış süreci başladı', body:'Odaları birlikte değerlendirip kesintileri onaylayın.', icon:'key' });
+    return;
+  }
+
+  if (type === 'deduction'){
+    p.moveOut.deductions.push({ id:'k'+Date.now(), label:String(fd.get('label')).trim(), amount:Number(fd.get('amount')) || 0, note:String(fd.get('note') || '').trim() });
+    resetMoveOutApprovals(p);
+    save(); closeSheet(); render();
+    return;
+  }
+
+  if (type === 'refund'){
+    const amount = Number(fd.get('amount')) || 0, date = String(fd.get('date'));
+    p.moveOut.refunded = { amount, date };
+    sysMsg(p, 'Depozito iadesi yapıldı: '+tl(amount));
+    save(); closeSheet(); render();
+    notify({ title:'İade kaydedildi', body:tl(amount)+' · '+fmtFull(parse(date))+'. Kiracıya bildirildi.', icon:'key' });
+    return;
+  }
+
   if (type === 'editProp'){
     p.name = String(fd.get('name')).trim();
     p.addr = String(fd.get('addr')).trim();
-    p.rent = Number(fd.get('rent')) || p.rent;
+    const newRent = Number(fd.get('rent')) || p.rent;
+    if (newRent !== p.rent){
+      const today = iso(t0());
+      p.rentHistory = (p.rentHistory || []).filter(h => h.from !== today);
+      p.rentHistory.push({ from: today, amount: newRent, note:'Elle güncellendi' });
+    }
+    p.value = Number(fd.get('value')) || null;
     p.dueDay = Math.min(28, Math.max(1, Number(fd.get('due')) || p.dueDay));
     p.aidat = Number(fd.get('aidat')) || 0;
     p.aidatPayer = fd.get('aidatPayer');
     p.deposit = Number(fd.get('deposit')) || 0;
     if (fd.get('contractEnd')) p.contractEnd = String(fd.get('contractEnd'));
     if (fd.get('dask')) p.dask = String(fd.get('dask'));
-    p.tenant.name = String(fd.get('tenantName') || p.tenant.name);
-    p.tenant.phone = String(fd.get('tenantPhone') || p.tenant.phone);
+    normalize(p);
     save();
     closeSheet();
     render();
@@ -520,6 +746,12 @@ export function onInput(ev){
     P(d.pid).inspect.rooms[Number(d.i)].note = ev.target.value;
     save();
   }
+
+  if (n === 'exitNote'){
+    // Onaylar yazarken değil, alan bırakılınca sıfırlanır (bkz. change).
+    P(d.pid).moveOut.rooms[Number(d.i)].note = ev.target.value;
+    save();
+  }
 }
 
 export async function onChangeField(ev){
@@ -542,6 +774,34 @@ export async function onChangeField(ev){
     save(); render();
     return;
   }
+
+  if (n === 'exitNote'){ resetMoveOutApprovals(P(d.pid)); save(); render(); return; }
+
+  if (n === 'exitCond'){
+    const p = P(d.pid);
+    p.moveOut.rooms[Number(d.i)].condition = ev.target.value;
+    resetMoveOutApprovals(p);
+    save(); render();
+    return;
+  }
+
+  if (n === 'exitPhoto'){
+    const files = [...(ev.target.files || [])];
+    if (!files.length) return;
+    const p = P(d.pid), room = p.moveOut.rooms[Number(d.i)];
+    for (const file of files.slice(0, 6)){
+      try { room.shots.push(await shrink(file, 720)); } catch(e){ /* görsel değilse atla */ }
+    }
+    resetMoveOutApprovals(p);
+    const ok = save();
+    render();
+    if (!ok) notify({ title:'Yer kalmadı', body:'Tarayıcı depolaması doldu; fotoğraflar kaydedilemedi.', icon:'cam' }, false);
+    return;
+  }
+
+  if (n === 'expenseYear'){ ui.expenseYear = ev.target.value; render(); return; }
+  if (n === 'reportYear'){ ui.reportYear = ev.target.value; render(); return; }
+  if (n === 'noExemption'){ ui.noExemption = ev.target.checked; render(); return; }
 
   if (n === 'setb'){
     S.settings[d.k] = ev.target.checked;

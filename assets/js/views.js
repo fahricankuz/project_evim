@@ -1,15 +1,17 @@
 /* Ekranların HTML'i. Saf fonksiyonlar: durumu okur, string döndürür.
    Etkileşim data-act öznitelikleriyle actions.js'e bağlanır. */
 
-import { S, ui, STEPS, DOC_CATS } from './state.js';
+import { S, ui, STEPS, DOC_CATS, CONDITIONS } from './state.js';
+import { estimate } from './tax.js';
 import { I, ic } from './icons.js';
 import { current, screenMap, PROP_SUBS } from './router.js';
 import {
   P, period, statusOf, dueDate, remaining, chip, ST, openReqs, newReqs,
-  otherPerson, otherLabel, monthCollection, yearIncome, reminders, agendaItems, search, unreadCount
+  otherPerson, otherLabel, monthCollection, yearIncome, reminders, agendaItems, search, unreadCount,
+  rentAt, tenantsLabel, meTenant, senderName, expensesIn, sum, moveOutSummary, unpaid, yearNumbers, dataYears
 } from './logic.js';
 import {
-  esc, tl, fmt, fmtFull, monthName, monthYear, parse, t0, between, daysTo,
+  esc, tl, fmt, fmtFull, monthName, monthYear, parse, t0, iso, between, daysTo,
   tm, dayLabel, ago, up
 } from './util.js';
 
@@ -69,7 +71,7 @@ export function rentHero(p){
   return '<section class="hero stack" style="gap:12px">' +
     '<div class="row" style="justify-content:space-between;align-items:flex-start">' +
       '<div><div class="label">'+monthYear(per.key)+' kirası</div>' +
-      '<div class="big" style="margin-top:6px">'+tl(p.rent)+'</div>' +
+      '<div class="big" style="margin-top:6px">'+tl(rentAt(p, per.key))+'</div>' +
       '<div class="muted" style="margin-top:6px">'+esc(line)+'</div></div>'+chip(per.status)+'</div>' +
     payAction(p, per) + '</section>';
 }
@@ -128,7 +130,8 @@ export function secPay(p){
       (p.bills.length
         ? '<div class="list">'+p.bills.map(b => '<div class="li"><b>'+esc(b.n)+'</b><span class="chip">'+esc(b.who)+'</span></div>').join('')+'</div>'
         : '<div class="muted">Fatura kaydı yok.</div>') + '</section>' +
-    '<section><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2>Kira geçmişi</h2>' +
+    rentHistoryCard(p) +
+    '<section><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2>Ödeme geçmişi</h2>' +
       '<span class="muted">'+year+': '+paidYear.length+' ödeme onaylı</span></div>' +
       '<div class="list">'+rows+'</div></section></div>';
 }
@@ -156,7 +159,18 @@ export function reqCard(p, r){
     (r.cat !== 'Ek talep'
       ? '<div><div class="steps">'+steps+'</div><div class="steplbl">'+STEPS.map((s,i) => '<span class="'+(i === r.status ? 'on' : '')+'">'+s+'</span>').join('')+'</div></div>'
       : '') +
-    '<div class="row" style="flex-wrap:wrap;gap:6px">'+decision+cost+(shots ? '<span class="chip">'+shots+' fotoğraf</span>' : '')+'</div></button>';
+    '<div class="row" style="flex-wrap:wrap;gap:6px">'+decision+cost+(shots ? '<span class="chip">'+shots+' fotoğraf</span>' : '') +
+      (chosenQuote(r) ? '<span class="chip acc">'+esc(chosenQuote(r).vendor)+' · '+tl(chosenQuote(r).amount)+'</span>' : (r.quotes || []).length ? '<span class="chip">'+r.quotes.length+' teklif</span>' : '') +
+      (r.invoice ? '<span class="chip ok">Fatura işlendi</span>' : '') + '</div></button>';
+}
+
+function chosenQuote(r){ return (r.quotes || []).find(q => q.chosen) || null; }
+
+/** Mesaj bu oturumun sahibine mi ait? */
+function isMine(p, m){
+  if (m.from !== ui.role) return false;
+  if (ui.role === 'tenant') return !m.by || m.by === meTenant(p)?.id;
+  return true;
 }
 
 export function secReq(p){
@@ -182,7 +196,10 @@ export function secMsg(p){
     const d = dayLabel(m.at);
     if (d !== lastDay){ sep = '<div class="daysep">'+esc(d)+'</div>'; lastDay = d; }
     if (m.from === 'system') return sep + '<div class="bub sys">'+esc(m.text)+'</div>';
-    return sep + '<div class="bub '+(m.from === ui.role ? 'me' : 'them')+'">'+esc(m.text)+'<small>'+tm(m.at)+'</small></div>';
+    const mine = isMine(p, m);
+    // Birden fazla kiracı varsa kimin yazdığı gösterilir.
+    const who = !mine && (p.tenants.length > 1 || ui.role === 'tenant' && m.from === 'tenant') ? '<b class="who">'+esc(senderName(p, m))+'</b>' : '';
+    return sep + '<div class="bub '+(mine ? 'me' : 'them')+'">'+who+esc(m.text)+'<small>'+tm(m.at)+'</small></div>';
   }).join('');
 
   return '<div class="stack">' +
@@ -281,17 +298,39 @@ export function agendaSection(p){
 
 function tenantPanel(p){
   const o = p.landlord;
+  const me = meTenant(p);
+  const mates = p.tenants.filter(t => t.id !== me?.id);
   return header(p.name, p.addr) + '<div class="stack">' +
-    '<div class="card row" style="padding:10px 12px">' +
-      '<div style="width:34px;height:34px;border-radius:17px;background:var(--hero);color:var(--hero-ink);font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center">ES</div>' +
-      '<div style="flex:1"><b>'+esc(o.name)+'</b><div class="muted">Ev sahibi · bağlı</div></div><span class="chip ok">Aktif</span></div>' +
+    '<div class="card stack" style="padding:10px 12px;gap:8px">' +
+      personRow('ES', o.name, 'Ev sahibi · bağlı', '<span class="chip ok">Aktif</span>') +
+      mates.map(t => personRow(initials(t.name), t.name, 'Ev arkadaşın', '')).join('') +
+    '</div>' +
     rentHero(p) + renewalCard(p) +
+    (p.moveOut && !p.moveOut.refunded ? moveOutTeaser(p, '/kiraci/belgeler/cikis') : '') +
     '<div class="grid4">' +
       '<button class="qa" data-act="sheet" data-s="yeni-talep" data-pid="'+p.id+'">'+I.plus+'Talep aç</button>' +
       '<button class="qa" data-act="nav" data-go="/kiraci/mesajlar">'+I.chat+'Mesaj</button>' +
       '<a class="qa" href="tel:'+esc(o.phone)+'">'+I.phone+'Ara</a>' +
       '<button class="qa" data-act="nav" data-go="/kiraci/belgeler">'+I.doc+'Belgeler</button></div>' +
     agendaSection(p) + '</div>';
+}
+
+function personRow(abbr, name, sub, right){
+  return '<div class="row">' +
+    '<div class="avatar">'+esc(abbr)+'</div>' +
+    '<div style="flex:1;min-width:0"><b>'+esc(name)+'</b><div class="muted">'+esc(sub)+'</div></div>'+right+'</div>';
+}
+
+function initials(name){
+  const parts = String(name).replace(/[\[\]]/g, '').trim().split(/\s+/).filter(Boolean);
+  return ((parts[0] || '?')[0] + (parts[1] ? parts[1][0] : '')).toLocaleUpperCase('tr-TR');
+}
+
+function moveOutTeaser(p, go){
+  const m = moveOutSummary(p);
+  return '<button class="card row" style="justify-content:space-between" data-act="nav" data-go="'+go+'">' +
+    '<div><b>Çıkış süreci</b><div class="muted">Depozito '+tl(m.deposit)+' · kesinti '+tl(m.deducted)+' · iade '+tl(m.refund)+'</div></div>' +
+    '<span class="chip wait">Aç</span></button>';
 }
 
 export function tenantScreen(route){
@@ -303,11 +342,20 @@ export function tenantScreen(route){
     case 'msg': return header('Mesajlar', p.name) + secMsg(p);
     case 'agenda': return header('Takvim', p.name) + agendaScreenBody([p]);
     case 'docs':
-      return route.sub === 'tutanak'
-        ? header('Giriş tutanağı', p.name, '/kiraci/belgeler') + secInspect(p)
-        : header('Belgeler', p.name) + secDocs(p);
+      if (route.sub === 'tutanak') return header('Tutanak', p.name, '/kiraci/belgeler') + inspectTabs(p, 'giris', '/kiraci/belgeler') + secInspect(p);
+      if (route.sub === 'cikis') return header('Tutanak', p.name, '/kiraci/belgeler') + inspectTabs(p, 'cikis', '/kiraci/belgeler') + secMoveOut(p);
+      return header('Belgeler', p.name) + secDocs(p);
     default: return tenantPanel(p);
   }
+}
+
+/** Giriş / çıkış tutanakları arasında geçiş. */
+function inspectTabs(p, active, base){
+  const giris = ui.role === 'tenant' ? base + '/tutanak' : '/ev-sahibi/ev/'+p.id+'/tutanak';
+  const cikis = ui.role === 'tenant' ? base + '/cikis' : '/ev-sahibi/ev/'+p.id+'/cikis';
+  return '<div class="seg" role="group" aria-label="Tutanak türü" style="margin-bottom:14px">' +
+    '<button data-act="nav" data-go="'+giris+'" aria-pressed="'+(active === 'giris')+'">Giriş</button>' +
+    '<button data-act="nav" data-go="'+cikis+'" aria-pressed="'+(active === 'cikis')+'">Çıkış ve depozito</button></div>';
 }
 
 /* ---------------- ev sahibi ekranları ---------------- */
@@ -323,11 +371,12 @@ function portfolio(){
     const p = P(id), per = period(p), o = openReqs(p).length;
     return '<button class="card prop" data-act="nav" data-go="/ev-sahibi/ev/'+id+'">' +
       '<div class="r1"><div><b style="font-size:16px">'+esc(p.name)+'</b>' +
-        '<div class="muted">'+esc(p.tenant.name)+' · '+tl(p.rent)+'/ay</div></div>'+chip(per.status)+'</div>' +
+        '<div class="muted">'+esc(tenantsLabel(p))+' · '+tl(p.rent)+'/ay</div></div>'+chip(per.status)+'</div>' +
       '<div class="row" style="flex-wrap:wrap;gap:6px">' +
         (o ? '<span class="chip acc">'+o+' açık talep</span>' : '') +
         '<span class="chip">Yenileme '+daysTo(p.contractEnd)+' gün</span>' +
         (daysTo(p.dask) <= S.settings.insDays ? '<span class="chip bad">DASK '+daysTo(p.dask)+' gün</span>' : '') +
+        (p.moveOut && !p.moveOut.refunded ? '<span class="chip wait">Çıkış süreci</span>' : '') +
       '</div></button>';
   }).join('');
 
@@ -355,14 +404,10 @@ function propDetail(route){
   let body = '';
 
   if (sub === 'ozet'){
-    const t = p.tenant;
     body = '<div class="stack">' +
-      '<div class="card row" style="justify-content:space-between">' +
-        '<div><div class="label">Kiracı</div><b>'+esc(t.name)+'</b></div>' +
-        '<div class="row" style="gap:6px">' +
-          '<button class="btn small ghost" data-act="nav" data-go="/ev-sahibi/ev/'+p.id+'/mesaj">Mesaj</button>' +
-          '<a class="btn small primary" href="tel:'+esc(t.phone)+'">'+ic('phone', 16)+' Ara</a></div></div>' +
+      tenantsCard(p) +
       rentHero(p) +
+      (p.moveOut && !p.moveOut.refunded ? moveOutTeaser(p, '/ev-sahibi/ev/'+p.id+'/cikis') : '') +
       '<section class="card">' +
         '<div class="kv"><span>Aylık kira</span><span>'+tl(p.rent)+'</span></div>' +
         '<div class="kv"><span>Ödeme günü</span><span>Her ayın '+p.dueDay+'’i</span></div>' +
@@ -370,6 +415,7 @@ function propDetail(route){
         '<div class="kv"><span>Depozito</span><span>'+tl(p.deposit)+'</span></div>' +
         '<div class="kv"><span>Sözleşme bitişi</span><span>'+fmtFull(parse(p.contractEnd))+'</span></div>' +
         '<div class="kv"><span>DASK bitişi</span><span>'+fmtFull(parse(p.dask))+'</span></div>' +
+        (p.value ? '<div class="kv"><span>Tahmini değer</span><span>'+tl(p.value)+'</span></div>' : '') +
         '<button class="btn small ghost block" style="margin-top:10px" data-act="sheet" data-s="ev-duzenle" data-pid="'+p.id+'">Bilgileri düzenle</button></section>' +
       agendaSection(p) + '</div>';
   }
@@ -377,12 +423,182 @@ function propDetail(route){
   else if (sub === 'talep') body = secReq(p);
   else if (sub === 'mesaj') body = secMsg(p);
   else if (sub === 'belge') body = secDocs(p);
-  else if (sub === 'tutanak') body = secInspect(p);
+  else if (sub === 'tutanak') body = inspectTabs(p, 'giris') + secInspect(p);
+  else if (sub === 'cikis') body = inspectTabs(p, 'cikis') + secMoveOut(p);
+  else if (sub === 'gider') body = secExpenses(p);
 
+  const strip = sub === 'cikis' ? 'tutanak' : sub;
   return header(p.name, p.addr, '/ev-sahibi') +
     '<div class="scrollseg" role="group" aria-label="Ev bölümleri" style="margin-bottom:14px">' +
-      PROP_SUBS.map(s => '<button data-act="nav" data-go="/ev-sahibi/ev/'+p.id+'/'+s[0]+'" aria-pressed="'+(sub === s[0])+'">'+s[1]+'</button>').join('') +
+      PROP_SUBS.map(s => '<button data-act="nav" data-go="/ev-sahibi/ev/'+p.id+'/'+s[0]+'" aria-pressed="'+(strip === s[0])+'">'+s[1]+'</button>').join('') +
     '</div>' + body;
+}
+
+function tenantsCard(p){
+  return '<section class="card stack" style="gap:10px">' +
+    '<div class="row" style="justify-content:space-between"><h2>'+(p.tenants.length > 1 ? 'Kiracılar' : 'Kiracı')+'</h2>' +
+      '<button class="btn small ghost" data-act="sheet" data-s="kiraci-ekle" data-pid="'+p.id+'">'+ic('plus', 15)+' Kiracı ekle</button></div>' +
+    (p.tenants.length
+      ? p.tenants.map(t => personRow(initials(t.name), t.name, t.email || t.phone || 'İletişim bilgisi yok',
+          '<div class="row" style="gap:6px">' +
+            (t.phone ? '<a class="iconbtn sm" href="tel:'+esc(t.phone)+'" aria-label="'+esc(t.name)+' ara">'+ic('phone', 16)+'</a>' : '') +
+            '<button class="iconbtn sm" data-act="removeTenant" data-pid="'+p.id+'" data-id="'+esc(t.id)+'" aria-label="'+esc(t.name)+' kiracısını çıkar">'+ic('x', 16)+'</button></div>')).join('')
+      : '<div class="muted">Bu evde kayıtlı kiracı yok. Kiracı ekleyerek davet edebilirsin.</div>') +
+    '<button class="btn small ghost" data-act="nav" data-go="/ev-sahibi/ev/'+p.id+'/mesaj">'+ic('chat', 15)+' Mesaj gönder</button>' +
+    '</section>';
+}
+
+/* ---------------- kira tutarı geçmişi ---------------- */
+
+export function rentHistoryCard(p){
+  const hist = (p.rentHistory || []).slice().sort((a, b) => a.from < b.from ? 1 : -1);
+  if (!hist.length) return '';
+  const today = iso(t0());
+  return '<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2>Kira tutarı geçmişi</h2>' +
+      '<span class="muted">'+hist.length+' dönem</span></div><div class="list">' +
+    hist.map((h, i) => {
+      const prev = hist[i + 1];
+      const pct = prev && prev.amount ? Math.round((h.amount / prev.amount - 1) * 1000) / 10 : null;
+      const future = h.from > today;
+      return '<div class="li"><div><b>'+tl(h.amount)+'</b><div class="muted">'+fmtFull(parse(h.from))+(future ? ' itibarıyla' : '')+(h.note ? ' · '+esc(h.note) : '')+'</div></div>' +
+        (pct != null ? '<span class="chip '+(future ? 'wait' : '')+'">'+(pct >= 0 ? '+' : '')+pct.toLocaleString('tr-TR')+'%</span>' : '<span class="chip">Başlangıç</span>') + '</div>';
+    }).join('') + '</div></section>';
+}
+
+/* ---------------- çıkış ve depozito iadesi ---------------- */
+
+export function secMoveOut(p){
+  const mo = p.moveOut;
+  if (!mo){
+    return '<div class="stack">' +
+      '<div class="note">Taşınma zamanı geldiğinde çıkış sürecini buradan başlat. Giriş tutanağındaki odalar karşılaştırma için kopyalanır; kesintiler iki tarafın onayından sonra depozitodan düşülür.</div>' +
+      '<div class="card"><div class="kv"><span>Depozito</span><span>'+tl(p.deposit)+'</span></div>' +
+        '<div class="kv"><span>Ödenmemiş kira</span><span>'+tl(unpaid(p).total)+'</span></div></div>' +
+      '<button class="btn primary block" data-act="sheet" data-s="cikis-baslat" data-pid="'+p.id+'">Çıkış sürecini başlat</button></div>';
+  }
+
+  const sm = moveOutSummary(p);
+  const both = mo.tenantOk && mo.landlordOk;
+  const mineOk = ui.role === 'tenant' ? mo.tenantOk : mo.landlordOk;
+  const locked = both;
+
+  const rooms = mo.rooms.map((r, i) => {
+    const entry = p.inspect.rooms.find(x => x.n === r.n);
+    const entryCount = entry ? (entry.photos || 0) + (entry.shots || []).length : 0;
+    const shots = (r.shots || []).map((src, j) =>
+      '<div class="thumb"><img src="'+src+'" alt="'+esc(r.n)+' çıkış fotoğrafı '+(j+1)+'">' +
+      (locked ? '' : '<button data-act="removeExitShot" data-pid="'+p.id+'" data-i="'+i+'" data-j="'+j+'" aria-label="Fotoğrafı sil">×</button>')+'</div>').join('');
+    const entryShots = entry ? (entry.shots || []).slice(0, 4).map(src => '<img src="'+src+'" alt="'+esc(r.n)+' giriş fotoğrafı">').join('') : '';
+    const cls = r.condition === 'Aynı' ? 'ok' : r.condition === 'Yıpranmış' ? 'wait' : r.condition ? 'bad' : '';
+    return '<section class="card stack" style="gap:10px">' +
+      '<div class="row" style="justify-content:space-between"><b style="font-size:16px">'+esc(r.n)+'</b>' +
+        (r.condition ? '<span class="chip '+cls+'">'+esc(r.condition)+'</span>' : '<span class="chip">Değerlendirilmedi</span>')+'</div>' +
+      '<div class="compare">' +
+        '<div><div class="label">Girişte</div><div class="muted">'+(entry ? esc(entry.note || 'Not yok')+' · '+entryCount+' fotoğraf' : 'Girişte kayıt yok')+'</div>' +
+          (entryShots ? '<div class="thumbs" style="margin-top:6px">'+entryShots+'</div>' : '')+'</div>' +
+        '<div><div class="label">Çıkışta</div>' +
+          (locked
+            ? '<div class="muted">'+esc(r.note || 'Not yok')+' · '+(r.shots || []).length+' fotoğraf</div>'
+            : '<input class="inline" value="'+esc(r.note)+'" data-input="exitNote" data-pid="'+p.id+'" data-i="'+i+'" placeholder="Durum notu" aria-label="'+esc(r.n)+' çıkış notu">') +
+          (shots ? '<div class="thumbs" style="margin-top:6px">'+shots+'</div>' : '')+'</div>' +
+      '</div>' +
+      (locked ? '' :
+        '<div class="row" style="gap:8px">' +
+          '<label class="field" style="flex:1"><span class="sr">'+esc(r.n)+' durumu</span><select data-input="exitCond" data-pid="'+p.id+'" data-i="'+i+'">' +
+            '<option value="">Durum seç</option>' + CONDITIONS.map(c => '<option'+(c === r.condition ? ' selected' : '')+'>'+esc(c)+'</option>').join('') + '</select></label>' +
+          '<label class="btn small ghost" style="cursor:pointer">'+ic('cam', 16)+' Fotoğraf<input type="file" accept="image/*" multiple class="sr" data-input="exitPhoto" data-pid="'+p.id+'" data-i="'+i+'"></label>' +
+        '</div>') +
+      '</section>';
+  }).join('');
+
+  const deductions = (mo.deductions || []).map(d =>
+    '<div class="li"><div><b>'+esc(d.label)+'</b>'+(d.note ? '<div class="muted">'+esc(d.note)+'</div>' : '')+'</div>' +
+      '<div class="row" style="gap:6px"><b>'+tl(d.amount)+'</b>' +
+      (!locked && ui.role === 'landlord' ? '<button class="iconbtn sm" data-act="removeDeduction" data-pid="'+p.id+'" data-id="'+esc(d.id)+'" aria-label="'+esc(d.label)+' kesintisini sil">'+ic('x', 16)+'</button>' : '') +
+      '</div></div>').join('');
+
+  const due = unpaid(p);
+  const hasUnpaidLine = (mo.deductions || []).some(d => d.kind === 'rent');
+
+  return '<div class="stack">' +
+    '<section class="hero stack" style="gap:10px">' +
+      '<div class="label">Depozito hesabı'+(mo.date ? ' · çıkış '+fmtFull(parse(mo.date)) : '')+'</div>' +
+      '<div class="kv"><span class="muted">Depozito</span><span>'+tl(sm.deposit)+'</span></div>' +
+      '<div class="kv"><span class="muted">Kesintiler</span><span>− '+tl(sm.deducted)+'</span></div>' +
+      '<div class="row" style="justify-content:space-between;align-items:flex-end;margin-top:4px"><div><div class="muted">İade edilecek</div>' +
+        '<div class="big">'+tl(sm.refund)+'</div></div>' +
+        (mo.refunded ? '<span class="chip ok">İade edildi</span>' : both ? '<span class="chip wait">Onaylandı</span>' : '<span class="chip">Taslak</span>') + '</div>' +
+      (sm.extra ? '<div class="note warn">Kesintiler depozitoyu '+tl(sm.extra)+' aşıyor; bu tutar kiracıdan ayrıca talep edilir.</div>' : '') +
+    '</section>' +
+
+    '<section><h2 style="margin-bottom:8px">Oda oda karşılaştırma</h2><div class="stack">'+rooms+'</div></section>' +
+
+    '<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2>Kesintiler</h2>' +
+      (!locked && ui.role === 'landlord' ? '<button class="btn small ghost" data-act="sheet" data-s="kesinti" data-pid="'+p.id+'">'+ic('plus', 15)+' Ekle</button>' : '') + '</div>' +
+      (deductions ? '<div class="list">'+deductions+'</div>' : '<div class="muted">Kesinti yok; depozitonun tamamı iade edilir.</div>') +
+      (!locked && ui.role === 'landlord' && due.total > 0 && !hasUnpaidLine
+        ? '<button class="btn small ghost block" style="margin-top:10px" data-act="addUnpaidDeduction" data-pid="'+p.id+'">Ödenmemiş kirayı ekle ('+tl(due.total)+')</button>' : '') +
+    '</section>' +
+
+    '<section class="card stack" style="gap:8px"><h2>Onaylar</h2>' +
+      '<div class="kv"><span>Kiracı</span><span>'+(mo.tenantOk ? 'Onayladı' : 'Bekleniyor')+'</span></div>' +
+      '<div class="kv"><span>Ev sahibi</span><span>'+(mo.landlordOk ? 'Onayladı' : 'Bekleniyor')+'</span></div>' +
+      (mo.refunded
+        ? '<div class="note">'+tl(mo.refunded.amount)+' '+fmtFull(parse(mo.refunded.date))+' tarihinde iade edildi.</div>'
+        : !mineOk
+          ? '<button class="btn primary block" data-act="approveMoveOut" data-pid="'+p.id+'">Hesabı onayla</button>'
+          : !both
+            ? '<div class="muted">Karşı tarafın onayı bekleniyor. Bir kalem değişirse onaylar sıfırlanır.</div>'
+            : ui.role === 'landlord'
+              ? '<button class="btn primary block" data-act="sheet" data-s="iade" data-pid="'+p.id+'">İadeyi yaptım</button>'
+              : '<div class="muted">Ev sahibinin iadeyi yapması bekleniyor.</div>') +
+      '<button class="btn ghost block" data-act="exportMoveOut" data-pid="'+p.id+'">Çıkış raporunu dışa aktar</button>' +
+      (!mo.refunded && ui.role === 'landlord' ? '<button class="btn small ghost block" data-act="cancelMoveOut" data-pid="'+p.id+'">Çıkış sürecini iptal et</button>' : '') +
+    '</section></div>';
+}
+
+/* ---------------- gider defteri ---------------- */
+
+export function secExpenses(p){
+  const year = String(ui.expenseYear || new Date().getFullYear());
+  const years = [...new Set([String(new Date().getFullYear()), ...(p.expenses || []).map(e => String(e.date).slice(0, 4))])].sort().reverse();
+  const list = expensesIn(p, year).slice().sort((a, b) => a.date < b.date ? 1 : -1);
+  const total = sum(list);
+
+  const byCat = {};
+  list.forEach(e => { byCat[e.cat] = (byCat[e.cat] || 0) + Number(e.amount); });
+  const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(1, ...cats.map(c => c[1]));
+
+  const yn = yearNumbers(year).rows.find(r => r.id === p.id);
+
+  return '<div class="stack">' +
+    '<div class="row" style="justify-content:space-between">' +
+      '<label class="field" style="flex-direction:row;align-items:center;gap:8px">Yıl<select data-input="expenseYear" style="min-height:38px">' +
+        years.map(y => '<option'+(y === year ? ' selected' : '')+'>'+y+'</option>').join('') + '</select></label>' +
+      '<button class="btn small primary" data-act="sheet" data-s="gider" data-pid="'+p.id+'">'+ic('plus', 15)+' Gider ekle</button></div>' +
+
+    '<section class="hero stack" style="gap:10px"><div class="label">'+year+' net getiri</div>' +
+      '<div class="big">'+tl(yn.net)+'</div>' +
+      '<div class="grid2"><div><div class="muted">Tahsil edilen</div><b>'+tl(yn.gross)+'</b></div>' +
+        '<div><div class="muted">Giderler</div><b>'+tl(yn.exp)+'</b></div></div>' +
+      (yn.yieldPct != null ? '<div class="muted">Değere göre net getiri: %'+(yn.yieldPct * 100).toLocaleString('tr-TR', { maximumFractionDigits:1 })+'</div>' : '') +
+    '</section>' +
+
+    (cats.length
+      ? '<section class="card stack"><h2>Kategoriye göre</h2>' + cats.map(([c, v]) =>
+          '<div><div class="row" style="justify-content:space-between;font-size:14px"><b>'+esc(c)+'</b><span style="font-weight:800">'+tl(v)+'</span></div>' +
+          '<div class="bar" style="margin-top:6px"><i style="width:'+(v/max*100).toFixed(1)+'%"></i></div></div>').join('') + '</section>'
+      : '') +
+
+    '<section><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2>Kayıtlar</h2><span class="muted">'+list.length+' gider · '+tl(total)+'</span></div>' +
+      (list.length
+        ? '<div class="list">' + list.map(e =>
+            '<button class="li" data-act="sheet" data-s="gider" data-pid="'+p.id+'" data-id="'+esc(e.id)+'">' +
+              '<div><b>'+esc(e.cat)+'</b><div class="muted">'+fmtFull(parse(e.date))+(e.note ? ' · '+esc(e.note) : '')+(e.reqId ? ' · talebe bağlı' : '')+'</div></div>' +
+              '<b>'+tl(e.amount)+'</b></button>').join('') + '</div>'
+        : '<div class="empty">'+year+' için gider kaydı yok.</div>') +
+    '</section></div>';
 }
 
 function allRequests(){
@@ -407,35 +623,70 @@ function threads(){
     S.order.map(id => {
       const p = P(id), last = p.msgs[p.msgs.length-1];
       return '<button class="li" data-act="nav" data-go="/ev-sahibi/ev/'+id+'/mesaj">' +
-        '<div style="min-width:0"><b>'+esc(p.tenant.name)+'</b>' +
+        '<div style="min-width:0"><b>'+esc(tenantsLabel(p))+'</b>' +
         '<div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px">'+esc(p.name)+' · '+(last ? esc(last.text) : 'Henüz mesaj yok')+'</div></div>' +
         '<span class="muted">'+(last ? fmt(last.at) : '')+'</span></button>';
     }).join('') + '</div>';
 }
 
 function report(){
-  const yi = yearIncome();
+  const years = dataYears();
+  const year = String(ui.reportYear || years[0]);
+  const yn = yearNumbers(year);
   const dep = S.order.reduce((a, id) => a + P(id).deposit, 0);
   const monthly = S.order.reduce((a, id) => a + P(id).rent, 0);
-  const max = Math.max(1, ...S.order.map(id => yi.per[id]));
+  const max = Math.max(1, ...yn.rows.map(r => r.gross));
 
-  return header('Rapor', yi.year+' yılı') + '<div class="stack">' +
-    '<section class="hero stack" style="gap:8px"><div class="label">'+yi.year+' tahsil edilen kira</div>' +
-      '<div class="big">'+tl(yi.total)+'</div>' +
-      '<div class="muted">Onaylanmış ve kısmi ödemelerden hesaplanır.</div></section>' +
+  return header('Rapor', year+' yılı') + '<div class="stack">' +
+    '<label class="field" style="flex-direction:row;align-items:center;gap:8px">Yıl<select data-input="reportYear" style="min-height:38px">' +
+      years.map(y => '<option'+(y === year ? ' selected' : '')+'>'+y+'</option>').join('') + '</select></label>' +
+
+    '<section class="hero stack" style="gap:10px"><div class="label">'+year+' net kira getirisi</div>' +
+      '<div class="big">'+tl(yn.net)+'</div>' +
+      '<div class="grid2"><div><div class="muted">Tahsil edilen</div><b>'+tl(yn.gross)+'</b></div>' +
+        '<div><div class="muted">Giderler</div><b>'+tl(yn.exp)+'</b></div></div>' +
+      '<div class="muted">Onaylanmış ve kısmi ödemelerden, girilen giderler düşülerek hesaplanır.</div></section>' +
+
     '<section class="card stack"><h2>Ev bazında</h2>' +
-      S.order.map(id => {
-        const p = P(id);
-        return '<div><div class="row" style="justify-content:space-between;font-size:14px">' +
-          '<b>'+esc(p.name)+'</b><span style="font-weight:800">'+tl(yi.per[id])+'</span></div>' +
-          '<div class="bar" style="margin-top:6px"><i style="width:'+(yi.per[id]/max*100).toFixed(1)+'%"></i></div></div>';
-      }).join('') + '</section>' +
+      yn.rows.map(r =>
+        '<div><div class="row" style="justify-content:space-between;font-size:14px">' +
+          '<b>'+esc(r.name)+'</b><span style="font-weight:800">'+tl(r.net)+'</span></div>' +
+          '<div class="bar split" style="margin-top:6px" title="Brüt '+tl(r.gross)+', gider '+tl(r.exp)+'">' +
+            '<i style="width:'+(Math.max(0, r.net)/max*100).toFixed(1)+'%"></i><i class="exp" style="width:'+(Math.min(r.exp, r.gross)/max*100).toFixed(1)+'%"></i></div>' +
+          '<div class="muted" style="margin-top:4px">Brüt '+tl(r.gross)+' · gider '+tl(r.exp) +
+            (r.yieldPct != null ? ' · net getiri %'+(r.yieldPct * 100).toLocaleString('tr-TR', { maximumFractionDigits:1 }) : '')+'</div></div>'
+      ).join('') +
+      '<div class="legend"><span><i></i>Net</span><span><i class="exp"></i>Gider</span></div></section>' +
+
+    taxCard(year, yn) +
+
     '<div class="grid2">' +
       '<div class="card"><div class="label">Tutulan depozito</div><div style="font-weight:800;font-size:18px;margin-top:4px">'+tl(dep)+'</div></div>' +
       '<div class="card"><div class="label">Aylık toplam kira</div><div style="font-weight:800;font-size:18px;margin-top:4px">'+tl(monthly)+'</div></div></div>' +
     '<button class="btn primary block" data-act="shareReport">Beyanname özeti oluştur</button>' +
-    '<button class="btn ghost block" data-act="exportCsv">Kira geçmişini CSV indir</button>' +
+    '<button class="btn ghost block" data-act="exportCsv">Ödemeleri ve giderleri CSV indir</button>' +
     '<p class="foot">Özet bilgi amaçlıdır; kira geliri beyanı için mali müşavirine danış.</p></div>';
+}
+
+function taxCard(year, yn){
+  const e = estimate(yn.gross, yn.exp, { year:Number(year), noExemption: !!ui.noExemption });
+  const r = e.rates;
+  const pick = m => e.best === m ? ' <span class="chip ok">Daha avantajlı</span>' : '';
+  return '<section class="card stack" style="gap:10px">' +
+    '<div class="row" style="justify-content:space-between"><h2>Vergi tahmini</h2><span class="chip">'+r.year+' oranları</span></div>' +
+    (r.approx ? '<div class="note warn">'+year+' oranları henüz uygulamada yok; '+r.year+' değerleriyle yaklaşık hesaplandı.</div>' : '') +
+    '<div class="kv"><span>Konut kira geliri</span><span>'+tl(e.gross)+'</span></div>' +
+    '<div class="kv"><span>İstisna</span><span>'+(ui.noExemption ? 'Uygulanmıyor' : '− '+tl(e.istisna))+'</span></div>' +
+    (e.belowExemption
+      ? '<div class="note">Gelir istisna tutarının altında; bu yıl için konut kira geliri beyanı gerekmeyebilir.</div>'
+      : '<div class="kv"><span>Vergiye tabi kısım</span><span>'+tl(e.taxable)+'</span></div>' +
+        '<div class="taxgrid">' +
+          '<div class="card"><div class="label">Götürü gider (%'+Math.round(r.goturu * 100)+')</div><div class="mid">'+tl(e.goturu.tax)+'</div><div class="muted">Matrah '+tl(e.goturu.base)+'</div>'+pick('goturu')+'</div>' +
+          '<div class="card"><div class="label">Gerçek gider</div><div class="mid">'+tl(e.gercek.tax)+'</div><div class="muted">İndirilebilir gider '+tl(e.gercek.allowed)+'</div>'+pick('gercek')+'</div>' +
+        '</div>') +
+    '<label class="toggle" style="border-top:0;padding:4px 0;font-size:14px">İstisnadan yararlanamıyorum<input type="checkbox" data-input="noExemption"'+(ui.noExemption ? ' checked' : '')+'></label>' +
+    '<div class="muted" style="font-size:12.5px">Ticari, zirai ya da serbest meslek kazancı beyan edenler veya diğer gelirleri belirli sınırı aşanlar istisnadan yararlanamaz. Tahmin başka gelir olmadığını varsayar; beyan öncesi mali müşavirine danış.</div>' +
+    '</section>';
 }
 
 /** Takvim: tüm evlerin yaklaşan işleri tarih sırasında. */

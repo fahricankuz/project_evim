@@ -6,12 +6,15 @@ import { render } from './render.js';
 import { A, onSubmit, onInput, onChangeField } from './actions.js';
 import { trapFocus } from './sheets.js';
 import { handleKey as handleConfirmKey } from './confirm.js';
-import { reminders } from './logic.js';
+import { reminders, normalizeAll } from './logic.js';
 import { notify } from './notify.js';
 import { up } from './util.js';
 import { isActive as tourActive } from './tour.js';
 
 applyTheme();
+
+// Süresi dolan sözleşmeleri uzat, güncel kirayı geçmişten oku.
+if (normalizeAll()) save();
 
 /* ---- olay delegasyonu ---- */
 

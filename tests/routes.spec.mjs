@@ -7,7 +7,8 @@ const ROUTES = [
   ['#/kiraci/talepler', 'Talepler'],
   ['#/kiraci/mesajlar', 'Mesajlar'],
   ['#/kiraci/belgeler', 'Belgeler'],
-  ['#/kiraci/belgeler/tutanak', 'Giriş tutanağı'],
+  ['#/kiraci/belgeler/tutanak', 'Tutanak'],
+  ['#/kiraci/belgeler/cikis', 'Tutanak'],
   ['#/kiraci/takvim', 'Takvim'],
   ['#/ev-sahibi', 'Portföyüm'],
   ['#/ev-sahibi/talepler', 'Talepler'],
@@ -20,6 +21,8 @@ const ROUTES = [
   ['#/ev-sahibi/ev/moda/mesaj', 'Moda’daki ev'],
   ['#/ev-sahibi/ev/moda/belge', 'Moda’daki ev'],
   ['#/ev-sahibi/ev/moda/tutanak', 'Moda’daki ev'],
+  ['#/ev-sahibi/ev/moda/cikis', 'Moda’daki ev'],
+  ['#/ev-sahibi/ev/moda/gider', 'Moda’daki ev'],
   ['#/ev-sahibi/ev/cihangir/odeme', 'Cihangir 1+1'],
   ['#/ev-sahibi/ev/atasehir/ozet', 'Ataşehir 2+1'],
   ['#/bilinmeyen/yol', 'Moda’daki ev']
@@ -44,7 +47,13 @@ const SHEETS = [
   '#/ev-sahibi?s=harita',
   '#/ev-sahibi?s=ev-ekle',
   '#/ev-sahibi/ev/moda?s=ev-duzenle',
-  '#/ev-sahibi/ev/moda/odeme?s=yenileme'
+  '#/ev-sahibi/ev/moda/odeme?s=yenileme',
+  '#/ev-sahibi/ev/moda?s=kiraci-ekle',
+  '#/ev-sahibi/ev/moda/gider?s=gider',
+  '#/ev-sahibi/ev/moda/gider?s=gider&id=e1',
+  '#/ev-sahibi/ev/moda/talep?s=teklif&pid=moda&id=r1',
+  '#/ev-sahibi/ev/moda/talep?s=fatura&pid=moda&id=r1',
+  '#/ev-sahibi/ev/moda/cikis?s=cikis-baslat&pid=moda'
 ];
 
 for (const hash of SHEETS){

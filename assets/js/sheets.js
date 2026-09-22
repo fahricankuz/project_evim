@@ -1,10 +1,10 @@
 /* Alt sayfalar (sheet'ler). Hangi sheet'in açık olduğu adresten okunur:
    ?s=<ad> — böylece geri tuşu sheet'i kapatır, link paylaşımı sheet'i açar. */
 
-import { S, ui, CATS, DOC_CATS, COST_OPTS, STEPS } from './state.js';
+import { S, ui, CATS, DOC_CATS, COST_OPTS, STEPS, EXPENSE_CATS, DEDUCTION_PRESETS } from './state.js';
 import { I, ic } from './icons.js';
 import { current } from './router.js';
-import { P, period, statusOf, remaining, ST, reminders, otherPerson } from './logic.js';
+import { P, period, statusOf, remaining, ST, reminders, otherPerson, rentAt, moveOutSummary } from './logic.js';
 import { searchBody, isCurrent } from './views.js';
 import { esc, opts, tl, fmt, fmtFull, monthYear, parse, iso, t0, daysTo, tm, ago } from './util.js';
 import { screenMap } from './router.js';
@@ -33,6 +33,13 @@ export function sheetBody(route){
     case 'ev-ekle': return addPropSheet();
     case 'ev-duzenle': return editPropSheet(p);
     case 'metin': return textSheet();
+    case 'kiraci-ekle': return addTenantSheet(p);
+    case 'gider': return expenseSheet(p, route.params.id);
+    case 'teklif': return quoteSheet(p, route.params.id);
+    case 'fatura': return invoiceSheet(p, route.params.id);
+    case 'cikis-baslat': return startMoveOutSheet(p);
+    case 'kesinti': return deductionSheet(p);
+    case 'iade': return refundSheet(p);
     default: return null;
   }
 }
@@ -157,6 +164,7 @@ function reqSheet(p, id){
           : '<span class="chip wait">Ev sahibinin kararı bekleniyor</span>')) +
     '<div class="kv"><span>Masraf</span><span>'+esc(r.cost)+(r.costOk ? ' · onaylı' : r.cost !== 'Belirlenmedi' ? ' · onay bekliyor' : '')+'</span></div>' +
     ctrl +
+    quotesSection(p, r) +
     (timeline ? '<section><h2 style="margin-bottom:4px">Geçmiş</h2><div class="list">'+timeline+'</div></section>' : '') +
     '<button class="btn ghost block" data-act="goMsg" data-pid="'+p.id+'">Bu talep hakkında yaz</button></div>';
 }
@@ -179,8 +187,8 @@ function receiptSheet(p, key){
       (rc.photo
         ? '<img src="'+rc.photo+'" alt="Dekont görseli" style="width:100%;height:100%;object-fit:contain;border-radius:10px">'
         : esc(rc.receipt || 'Dekont yok')) + '</div>' +
-    '<div class="kv"><span>Tutar</span><span>'+tl(rc.amount != null ? rc.amount : p.rent)+'</span></div>' +
-    '<div class="kv"><span>Beklenen</span><span>'+tl(p.rent)+'</span></div>' +
+    '<div class="kv"><span>Tutar</span><span>'+tl(rc.amount != null ? rc.amount : rentAt(p, key))+'</span></div>' +
+    '<div class="kv"><span>Beklenen</span><span>'+tl(rentAt(p, key))+'</span></div>' +
     '<div class="kv"><span>Ödeme tarihi</span><span>'+(rc.date ? fmtFull(parse(rc.date)) : '—')+'</span></div>' +
     '<div class="kv"><span>Durum</span><span>'+esc((ST[st] || ST.pending)[0])+'</span></div>' +
     (rc.note ? '<div class="kv"><span>Not</span><span>'+esc(rc.note)+'</span></div>' : '') +
@@ -199,9 +207,10 @@ function payFormSheet(p, key){
   const k = key || period(p).key;
   const rec = p.pay[k] || {};
   const paid = rec.status === 'partial' ? Number(rec.amount) || 0 : 0;
-  const suggest = Math.max(0, p.rent - paid);
+  const due = rentAt(p, k);
+  const suggest = Math.max(0, due - paid);
   return '<h3>'+monthYear(k)+' ödemesi</h3><form class="stack" data-form="pay" data-pid="'+p.id+'" data-key="'+k+'">' +
-    '<div class="kv"><span>Aylık kira</span><span>'+tl(p.rent)+'</span></div>' +
+    '<div class="kv"><span>Bu ayın kirası</span><span>'+tl(due)+'</span></div>' +
     (paid ? '<div class="kv"><span>Şimdiye kadar ödenen</span><span>'+tl(paid)+'</span></div>' : '') +
     '<label class="field">Ödenen tutar (₺)<input name="amount" type="number" min="0" step="1" required value="'+suggest+'" inputmode="numeric"></label>' +
     '<label class="field">Ödeme tarihi<input name="date" type="date" required value="'+iso(t0())+'" max="'+iso(t0())+'"></label>' +
@@ -258,11 +267,12 @@ function editPropSheet(p){
     '<label class="field">Ödeme günü<input name="due" type="number" min="1" max="28" value="'+p.dueDay+'"></label></div>' +
     '<div class="grid2"><label class="field">Aidat (₺)<input name="aidat" type="number" min="0" value="'+p.aidat+'"></label>' +
     '<label class="field">Aidatı ödeyen<select name="aidatPayer">'+opts(['Kiracı','Ev sahibi'], p.aidatPayer)+'</select></label></div>' +
-    '<label class="field">Depozito (₺)<input name="deposit" type="number" min="0" value="'+p.deposit+'"></label>' +
+    '<div class="grid2"><label class="field">Depozito (₺)<input name="deposit" type="number" min="0" value="'+p.deposit+'"></label>' +
+    '<label class="field">Tahmini değer (₺)<input name="value" type="number" min="0" value="'+(p.value || '')+'" placeholder="İsteğe bağlı"></label></div>' +
+    '<div class="muted">Kira tutarını değiştirirsen bugünden geçerli yeni bir dönem olarak kira geçmişine eklenir. Değer, net getiri oranı için kullanılır.</div>' +
     '<div class="grid2"><label class="field">Sözleşme bitişi<input name="contractEnd" type="date" value="'+esc(p.contractEnd)+'"></label>' +
     '<label class="field">DASK bitişi<input name="dask" type="date" value="'+esc(p.dask)+'"></label></div>' +
-    '<label class="field">Kiracı adı<input name="tenantName" value="'+esc(p.tenant.name)+'"></label>' +
-    '<label class="field">Kiracı telefonu<input name="tenantPhone" type="tel" value="'+esc(p.tenant.phone)+'"></label>' +
+
     '<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">Vazgeç</button>' +
     '<button class="btn primary" style="flex:1">Kaydet</button></div>' +
     (S.order.length > 1 ? '<button type="button" class="btn small danger block" data-act="removeProp" data-pid="'+p.id+'">Bu evi kaldır</button>' : '') +
@@ -275,6 +285,121 @@ function textSheet(){
     '<textarea id="txtOut" readonly style="min-height:220px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:12px;font-size:14px">'+esc(t.body)+'</textarea>' +
     '<div class="row"><button class="btn primary" style="flex:1" data-act="copyText">Kopyala</button>' +
     '<button class="btn ghost" style="flex:1" data-act="downloadText">İndir</button></div></div>';
+}
+
+/* ---------------- teklifler ve fatura ---------------- */
+
+function quotesSection(p, r){
+  const quotes = r.quotes || [];
+  const landlord = ui.role === 'landlord';
+  if (!quotes.length && !landlord && !r.invoice) return '';
+  return '<section class="card stack" style="gap:8px">' +
+    '<div class="row" style="justify-content:space-between"><h2>Usta ve teklifler</h2>' +
+      (landlord && r.status < 3 ? '<button class="btn small ghost" data-act="sheet" data-s="teklif" data-pid="'+p.id+'" data-id="'+r.id+'">'+ic('plus', 15)+' Teklif</button>' : '') + '</div>' +
+    (quotes.length
+      ? '<div class="list">' + quotes.slice().sort((a, b) => a.amount - b.amount).map(q =>
+          '<div class="li"><div style="min-width:0"><b>'+esc(q.vendor)+'</b>' +
+            '<div class="muted">'+tl(q.amount)+(q.note ? ' · '+esc(q.note) : '')+'</div></div>' +
+          '<div class="row" style="gap:6px">' +
+            (q.chosen ? '<span class="chip ok">Seçildi</span>'
+              : landlord && r.status < 3 ? '<button class="btn small ghost" data-act="chooseQuote" data-pid="'+p.id+'" data-id="'+r.id+'" data-q="'+esc(q.id)+'">Seç</button>' : '') +
+            (q.phone ? '<a class="iconbtn sm" href="tel:'+esc(q.phone)+'" aria-label="'+esc(q.vendor)+' ara">'+ic('phone', 16)+'</a>' : '') +
+            (landlord && !q.chosen ? '<button class="iconbtn sm" data-act="removeQuote" data-pid="'+p.id+'" data-id="'+r.id+'" data-q="'+esc(q.id)+'" aria-label="'+esc(q.vendor)+' teklifini sil">'+ic('x', 16)+'</button>' : '') +
+          '</div></div>').join('') + '</div>'
+      : '<div class="muted">Henüz teklif yok. Ustalardan aldığın fiyatları ekleyip karşılaştırabilirsin.</div>') +
+    (r.invoice
+      ? '<div class="note">Fatura: '+tl(r.invoice.amount)+' · '+esc(r.invoice.name)+' · '+fmtFull(parse(r.invoice.date)) +
+          (r.invoice.expenseId ? ' · gider defterine işlendi' : '')+'</div>'
+      : landlord ? '<button class="btn small ghost" data-act="sheet" data-s="fatura" data-pid="'+p.id+'" data-id="'+r.id+'">Fatura ekle</button>' : '') +
+    '</section>';
+}
+
+function quoteSheet(p, reqId){
+  const r = p.requests.find(x => x.id === reqId);
+  if (!r) return null;
+  return '<h3>Teklif ekle</h3><form class="stack" data-form="quote" data-pid="'+p.id+'" data-id="'+r.id+'">' +
+    '<div class="muted">'+esc(r.title)+'</div>' +
+    '<label class="field">Usta ya da firma<input name="vendor" required maxlength="60"></label>' +
+    '<div class="grid2"><label class="field">Tutar (₺)<input name="amount" type="number" min="0" required inputmode="numeric"></label>' +
+    '<label class="field">Telefon<input name="phone" type="tel"></label></div>' +
+    '<label class="field">Not<input name="note" maxlength="120" placeholder="Ör. parça dahil, 2 gün"></label>' +
+    '<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">Vazgeç</button>' +
+    '<button class="btn primary" style="flex:1">Ekle</button></div></form>';
+}
+
+function invoiceSheet(p, reqId){
+  const r = p.requests.find(x => x.id === reqId);
+  if (!r) return null;
+  const q = (r.quotes || []).find(x => x.chosen);
+  const landlordPays = r.cost === 'Ev sahibi' || r.cost === 'Paylaşımlı';
+  return '<h3>Fatura ekle</h3><form class="stack" data-form="invoice" data-pid="'+p.id+'" data-id="'+r.id+'">' +
+    '<div class="muted">'+esc(r.title)+(q ? ' · '+esc(q.vendor) : '')+'</div>' +
+    '<div class="grid2"><label class="field">Tutar (₺)<input name="amount" type="number" min="0" required value="'+(q ? q.amount : '')+'"></label>' +
+    '<label class="field">Tarih<input name="date" type="date" required value="'+iso(t0())+'"></label></div>' +
+    '<label class="field">Fatura dosyası<input type="file" name="file" accept="application/pdf,image/*" style="padding-top:10px"></label>' +
+    '<label class="toggle">Gider defterine ekle'+(r.cost === 'Paylaşımlı' ? ' (yarısı)' : '') +
+      '<input type="checkbox" name="toExpense"'+(landlordPays ? ' checked' : '')+'></label>' +
+    '<div class="muted">Masraf: '+esc(r.cost)+'. Masraf kiracıdaysa gider defterine eklenmez.</div>' +
+    '<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">Vazgeç</button>' +
+    '<button class="btn primary" style="flex:1">Kaydet</button></div></form>';
+}
+
+/* ---------------- kiracılar ---------------- */
+
+function addTenantSheet(p){
+  return '<h3>Kiracı ekle</h3><form class="stack" data-form="addTenant" data-pid="'+p.id+'">' +
+    '<div class="muted">'+esc(p.name)+' için yeni bir kiracı hesabı. Ev arkadaşları aynı evin ödemelerini, taleplerini ve yazışmalarını birlikte görür.</div>' +
+    '<label class="field">Ad soyad<input name="name" required maxlength="60"></label>' +
+    '<label class="field">E-posta<input name="email" type="email" placeholder="Davet bu adrese gider"></label>' +
+    '<label class="field">Telefon<input name="phone" type="tel" placeholder="05__ ___ __ __"></label>' +
+    '<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">Vazgeç</button>' +
+    '<button class="btn primary" style="flex:1">Ekle ve davet et</button></div></form>';
+}
+
+/* ---------------- giderler ---------------- */
+
+function expenseSheet(p, id){
+  const e = id ? (p.expenses || []).find(x => x.id === id) : null;
+  return '<h3>'+(e ? 'Gideri düzenle' : 'Gider ekle')+'</h3><form class="stack" data-form="expense" data-pid="'+p.id+'"'+(e ? ' data-id="'+esc(e.id)+'"' : '')+'>' +
+    '<label class="field">Kategori<select name="cat">'+opts(EXPENSE_CATS, e ? e.cat : EXPENSE_CATS[0])+'</select></label>' +
+    '<div class="grid2"><label class="field">Tutar (₺)<input name="amount" type="number" min="0" required value="'+(e ? e.amount : '')+'" inputmode="numeric"></label>' +
+    '<label class="field">Tarih<input name="date" type="date" required value="'+(e ? esc(e.date) : iso(t0()))+'"></label></div>' +
+    '<label class="field">Açıklama<input name="note" maxlength="120" value="'+(e ? esc(e.note || '') : '')+'"></label>' +
+    '<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">Vazgeç</button>' +
+    '<button class="btn primary" style="flex:1">Kaydet</button></div>' +
+    (e ? '<button type="button" class="btn small danger block" data-act="removeExpense" data-pid="'+p.id+'" data-id="'+esc(e.id)+'">Gideri sil</button>' : '') +
+    '</form>';
+}
+
+/* ---------------- çıkış ---------------- */
+
+function startMoveOutSheet(p){
+  return '<h3>Çıkış sürecini başlat</h3><form class="stack" data-form="startMoveOut" data-pid="'+p.id+'">' +
+    '<div class="muted">Giriş tutanağındaki '+p.inspect.rooms.length+' oda karşılaştırma için kopyalanır. Kiracı ve ev sahibi odaları birlikte değerlendirir, kesintiler iki tarafın onayından sonra kesinleşir.</div>' +
+    '<label class="field">Çıkış tarihi<input name="date" type="date" required value="'+iso(t0())+'"></label>' +
+    '<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">Vazgeç</button>' +
+    '<button class="btn primary" style="flex:1">Başlat</button></div></form>';
+}
+
+function deductionSheet(p){
+  return '<h3>Kesinti ekle</h3><form class="stack" data-form="deduction" data-pid="'+p.id+'">' +
+    '<label class="field">Kalem<input name="label" required maxlength="60" list="dedPresets" placeholder="Ör. Boya"></label>' +
+    '<datalist id="dedPresets">'+DEDUCTION_PRESETS.map(x => '<option value="'+esc(x)+'">').join('')+'</datalist>' +
+    '<label class="field">Tutar (₺)<input name="amount" type="number" min="0" required inputmode="numeric"></label>' +
+    '<label class="field">Gerekçe<input name="note" maxlength="140" placeholder="Hangi odada, girişe göre ne değişti?"></label>' +
+    '<div class="muted">Kesinti eklemek iki tarafın onayını sıfırlar. Olağan kullanımdan kaynaklı yıpranma için kesinti yapılamaz.</div>' +
+    '<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">Vazgeç</button>' +
+    '<button class="btn primary" style="flex:1">Ekle</button></div></form>';
+}
+
+function refundSheet(p){
+  const sm = moveOutSummary(p);
+  return '<h3>Depozito iadesi</h3><form class="stack" data-form="refund" data-pid="'+p.id+'">' +
+    '<div class="kv"><span>Hesaplanan iade</span><span>'+tl(sm.refund)+'</span></div>' +
+    '<div class="grid2"><label class="field">İade edilen (₺)<input name="amount" type="number" min="0" required value="'+sm.refund+'"></label>' +
+    '<label class="field">Tarih<input name="date" type="date" required value="'+iso(t0())+'"></label></div>' +
+    '<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">Vazgeç</button>' +
+    '<button class="btn primary" style="flex:1">Kaydet</button></div></form>';
 }
 
 /* ---------------- katman yönetimi ve odak tuzağı ---------------- */

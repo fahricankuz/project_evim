@@ -17,10 +17,14 @@ export const TOUR = [
     body:'Aynı veri, diğer taraftan. Ay içindeki tahsilat oranı, onay bekleyenler ve öncelikli işler en üstte.' },
   { path:'/ev-sahibi/ev/moda/odeme', title:'Ev detayı',
     body:'Her evin kendi ödeme, talep, mesaj, belge ve tutanak bölümü var. Üstteki şeritten bölümler arasında geçebilirsin.' },
+  { path:'/ev-sahibi/ev/moda/gider', title:'Gider defteri',
+    body:'Emlak vergisi, sigorta, tamir gibi giderler burada. Talep faturaları otomatik işlenir; net getiri anında hesaplanır.' },
+  { path:'/ev-sahibi/ev/moda/cikis', title:'Çıkış ve depozito',
+    body:'Taşınırken giriş ve çıkış odaları yan yana karşılaştırılır, kesintiler iki tarafın onayıyla depozitodan düşülür.' },
   { path:'/ev-sahibi/takvim', title:'Takvim',
     body:'Tüm evlerin yaklaşan işleri tek listede: gecikmiş, bu hafta, bu ay ve sonrası.' },
   { path:'/ev-sahibi/rapor', title:'Rapor',
-    body:'Yıllık tahsilat, ev bazında dağılım ve beyanname özeti. CSV olarak da indirebilirsin.' }
+    body:'Yıllık net getiri, ev bazında dağılım ve götürü/gerçek gider karşılaştırmalı vergi tahmini.' }
 ];
 
 export function isActive(){ return ui.tour != null; }
