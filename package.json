@@ -1,0 +1,15 @@
+{
+  "name": "evim",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Kiracı ve ev sahibi için kira yönetimi uygulaması",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs 8000",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

@@ -1,0 +1,38 @@
+name: GitHub Pages
+
+# Varsayılan dala her push'ta siteyi yayınlar.
+# İlk kullanımda: Settings → Pages → Source: "GitHub Actions" seçilmeli.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Yayın klasörünü hazırla
+        run: |
+          mkdir _site
+          cp -r index.html assets _site/
+          for f in manifest.webmanifest sw.js; do [ -f "$f" ] && cp "$f" _site/ || true; done
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

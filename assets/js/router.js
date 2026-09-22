@@ -55,7 +55,8 @@ export function parseRoute(hash){
   const params = parseQuery(qi < 0 ? '' : h.slice(qi));
   const seg = path.split('/').filter(Boolean);
 
-  const r = { path, params, sheet: params.s || null, role:'tenant', tab:'panel', pid:null, sub:null, reqId: params.req || null };
+  // base: sheet kapandığında dönülecek adres (derin linkteki kimlik parçası hariç).
+  const r = { path, base: path, params, sheet: params.s || null, role:'tenant', tab:'panel', pid:null, sub:null, reqId: params.req || null };
 
   if (seg[0] === 'ev-sahibi'){
     r.role = 'landlord';
@@ -70,7 +71,8 @@ export function parseRoute(hash){
     r.role = 'tenant';
     r.tab = TENANT_TABS[seg[1] || ''] || 'panel';
     if (r.tab === 'docs' && seg[2] === 'tutanak') r.sub = 'tutanak';
-    if (r.tab === 'req' && seg[2]) r.reqId = seg[2];
+    // /kiraci/talepler/<id> doğrudan talep detayını açar.
+    if (r.tab === 'req' && seg[2]){ r.reqId = seg[2]; r.base = '/kiraci/talepler'; if (!r.sheet) r.sheet = 'talep'; }
   }
   return r;
 }
@@ -98,7 +100,7 @@ export function go(path, opts = {}){
 export function openSheet(name, params = {}){
   const r = current();
   const willPush = !r.sheet;
-  go(r.path + buildQuery(Object.assign({}, params, { s: name })));
+  go(r.base + buildQuery(Object.assign({}, params, { s: name })));
   if (willPush) sheetPushed = true;
 }
 
@@ -118,7 +120,7 @@ export function closeSheet(){
     return;
   }
   sheetPushed = false;
-  go(r.path, { replace:true });
+  go(r.base, { replace:true });
 }
 
 /** Rotayı değiştirmeden query parametrelerini günceller. */
