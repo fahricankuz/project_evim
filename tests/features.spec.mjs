@@ -18,6 +18,11 @@ test('bir evde birden fazla kiracı: liste, ekleme, çıkarma', async ({ page })
   await sheet(page).locator('input[name=name]').fill('Yeni Oda Arkadaşı');
   await sheet(page).locator('input[name=email]').fill('oda@ornek.com');
   await sheet(page).locator('button:has-text("Ekle ve davet et")').click();
+  // Davet paylaşım sayfası açılır: kod, bağlantı, WhatsApp ve e-posta.
+  await expect(sheet(page)).toContainText('Kiracını davet et');
+  await expect(sheet(page).locator('.codebox')).toHaveText(/^DEMO\d{4}$/);
+  await expect(sheet(page).locator('#inviteLink')).toHaveValue(/#\/katil\/DEMO\d{4}$/);
+  await page.keyboard.press('Escape');
   await expect(screen(page)).toContainText('Yeni Oda Arkadaşı');
 
   await page.click('[aria-label="Yeni Oda Arkadaşı kiracısını çıkar"]');

@@ -102,3 +102,9 @@ export function announce(text){
   const el = document.getElementById('live');
   if (el) el.textContent = text;
 }
+
+/** Çakışmasız kimlik: sunucuda birincil anahtar olarak da kullanılır. */
+export function uid(prefix = ''){
+  if (globalThis.crypto && crypto.randomUUID) return prefix + crypto.randomUUID();
+  return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}

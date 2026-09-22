@@ -2,7 +2,7 @@
    Yeni sürüm yayınlarken CACHE sürümünü artırın; testler SHELL listesinin
    assets/ klasörüyle eşleştiğini denetler. */
 
-const CACHE = 'evim-v4';
+const CACHE = 'evim-v5';
 
 const SHELL = [
   './',
@@ -15,10 +15,14 @@ const SHELL = [
   './assets/icons/maskable-512.png',
   './assets/icons/apple-touch-icon.png',
   './assets/js/actions.js',
+  './assets/js/auth.js',
+  './assets/js/backend.js',
+  './assets/js/config.js',
   './assets/js/confirm.js',
   './assets/js/icons.js',
   './assets/js/logic.js',
   './assets/js/main.js',
+  './assets/js/mapping.js',
   './assets/js/migrate.js',
   './assets/js/notify.js',
   './assets/js/pwa.js',
@@ -57,8 +61,9 @@ self.addEventListener('fetch', event => {
   // Yalnızca kendi dosyalarımız ve yazı tipleri önbelleğe alınır;
   // sunucu (Supabase) istekleri her zaman ağa gider.
   const sameOrigin = url.origin === self.location.origin;
-  const font = /fonts\.(googleapis|gstatic)\.com$/.test(url.hostname);
-  if (!sameOrigin && !font) return;
+  // Yazı tipleri ve supabase-js modülü (jsDelivr) çevrimdışı açılış için önbelleğe alınır.
+  const cdn = /fonts\.(googleapis|gstatic)\.com$/.test(url.hostname) || url.hostname === 'cdn.jsdelivr.net';
+  if (!sameOrigin && !cdn) return;
 
   // Önce önbellek, arka planda güncelle (stale-while-revalidate).
   event.respondWith((async () => {

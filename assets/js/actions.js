@@ -12,12 +12,17 @@ import { notify } from './notify.js';
 import { ask } from './confirm.js';
 import { migrate } from './migrate.js';
 import { install } from './pwa.js';
+import { LIVE } from './config.js';
+import * as backend from './backend.js';
+import { AUTH_ACTIONS, AUTH_FORMS, authSubmit } from './auth.js';
 import { startTour, nextStep, prevStep, endTour, TOUR } from './tour.js';
 import {
-  iso, t0, parse, fmt, fmtFull, monthYear, tl, daysTo, shrink, download, esc, announce
+  iso, t0, parse, fmt, fmtFull, monthYear, tl, daysTo, shrink, download, esc, announce, uid
 } from './util.js';
 
-function sysMsg(p, text){ p.msgs.push({ from:'system', text, at:Date.now() }); }
+/** Mesaja kimlik verir; sunucu mesajları kimlikle eşleştirir. */
+function pushMsg(p, m){ p.msgs.push(Object.assign({ id: uid('m') }, m)); }
+function sysMsg(p, text){ pushMsg(p, { from:'system', text, at:Date.now() }); }
 function logReq(r, text){ (r.log = r.log || []).push({ at:Date.now(), text }); }
 function reqOf(p, id){ return p.requests.find(r => r.id === id); }
 
@@ -30,7 +35,19 @@ function tourGo(){
 export const A = {
   /* ---- gezinme ---- */
   nav: d => go(d.go),
-  sheet: d => openSheet(d.s, { pid:d.pid, key:d.key, cat:d.cat, id:d.id }),
+  sheet: d => {
+    openSheet(d.s, { pid:d.pid, key:d.key, cat:d.cat, id:d.id });
+    if (d.s === 'hesap'){
+      ui.authMsg = null;
+      backend.pushState().then(st => { ui.pushState = st; refreshLayer(); }).catch(() => {});
+    }
+  },
+
+  copyInvite: async () => {
+    const el = document.getElementById('inviteLink');
+    try { await navigator.clipboard.writeText(el.value); notify({ title:'Kopyalandı', body:'Davet bağlantısı panoya alındı.', icon:'doc' }, false); }
+    catch(e){ el.select(); }
+  },
   closeSheet: () => closeSheet(),
 
   switchRole: () => {
@@ -107,7 +124,7 @@ export const A = {
 
   nudge: d => {
     const p = P(d.pid), per = period(p);
-    p.msgs.push({
+    pushMsg(p, {
       from:'landlord',
       text:'Merhaba, '+monthYear(per.key)+' kirası için hatırlatma. Ödediysen dekontu uygulamaya yükleyebilir misin? Teşekkürler.',
       at: Date.now()
@@ -262,7 +279,7 @@ export const A = {
   },
 
   /* ---- bildirim, tema, veri ---- */
-  clearInbox: () => { S.inbox = []; save(); render(); },
+  clearInbox: () => { S.inbox = []; save(); backend.clearInboxRemote(); render(); },
 
   theme: d => { setTheme(d.v); render(); },
 
@@ -316,6 +333,14 @@ export const A = {
     const t = p.tenants.find(x => x.id === d.id);
     if (!t) return;
     if (!await ask({ title:t.name+' evden çıkarılsın mı?', body:'Bu kiracı artık evin ödemelerini, taleplerini ve yazışmalarını göremez. Geçmiş kayıtlar korunur.', ok:'Çıkar', danger:true })) return;
+    if (LIVE){
+      try {
+        if (t.pending) await backend.deleteInvite(p.id, t.code);
+        else await backend.removeMember(p.id, t.id);
+        render();
+      } catch(e){ notify({ title:'İşlem yapılamadı', body: backend.humanError(e), icon:'home' }, false); }
+      return;
+    }
     p.tenants = p.tenants.filter(x => x.id !== d.id);
     sysMsg(p, t.name+' evden çıkarıldı');
     save(); render();
@@ -356,7 +381,7 @@ export const A = {
     const p = P(d.pid), due = unpaid(p);
     if (!due.total) return;
     p.moveOut.deductions.push({
-      id:'k'+Date.now(), kind:'rent', label:'Ödenmemiş kira', amount:due.total,
+      id:uid('k'), kind:'rent', label:'Ödenmemiş kira', amount:due.total,
       note: due.months.map(m => monthYear(m.key)+' '+tl(m.owed)).join(', ')
     });
     resetMoveOutApprovals(p);
@@ -428,6 +453,8 @@ function resetMoveOutApprovals(p){
   p.moveOut.landlordOk = false;
 }
 
+Object.assign(A, AUTH_ACTIONS);
+
 function openText(title, body){
   ui.text = { title, body };
   openSheet('metin');
@@ -444,15 +471,17 @@ export async function onSubmit(ev){
   const type = f.dataset.form;
   const p = f.dataset.pid ? P(f.dataset.pid) : null;
 
+  if (AUTH_FORMS.includes(type)) return authSubmit(type, fd, f);
+
   if (type === 'msg'){
     const text = String(fd.get('text') || '').trim();
     if (!text) return;
-    p.msgs.push({ from: ui.role, by: ui.role === 'tenant' ? meTenant(p)?.id : undefined, text, at: Date.now() });
+    pushMsg(p, { from: ui.role, by: ui.role === 'tenant' ? meTenant(p)?.id : undefined, text, at: Date.now() });
     save(); render();
     document.getElementById('msgIn')?.focus();
-    if (ui.role === 'tenant'){
+    if (!LIVE && ui.role === 'tenant'){
       setTimeout(() => {
-        p.msgs.push({ from:'landlord', text:'Tamam, not aldım.', at: Date.now() });
+        pushMsg(p, { from:'landlord', text:'Tamam, not aldım.', at: Date.now() });
         save();
         if (current().tab === 'msg') render();
         notify({ title:p.landlord.name, body:'Tamam, not aldım.', icon:'chat' }, false);
@@ -465,10 +494,11 @@ export async function onSubmit(ev){
     const files = [...(f.querySelector('input[type=file]').files || [])];
     const shots = [];
     for (const file of files.slice(0, 4)){
-      try { shots.push(await shrink(file, 720)); } catch(e){ /* görsel değilse atla */ }
+      const v = await backend.storeFile(p.id, file, { maxSide:720 });
+      if (v) shots.push(v);
     }
     const r = {
-      id:'r'+Date.now(), cat:fd.get('cat'), title:String(fd.get('title')).trim(),
+      id:uid('r'), cat:fd.get('cat'), title:String(fd.get('title')).trim(),
       desc:String(fd.get('desc') || '').trim(), urgency:fd.get('urgency'),
       status:0, cost:'Belirlenmedi', costOk:false, decision:null,
       date: iso(t0()), photos:0, shots,
@@ -500,7 +530,9 @@ export async function onSubmit(ev){
       receipt: file.name,
       note: String(fd.get('note') || '').trim() || undefined
     };
-    try { rec.photo = await shrink(file, 900); } catch(e){ /* PDF: görsel yok */ }
+    // Görsel küçültülür; gerçek hesapta PDF dahil dosya depoya yüklenir.
+    const stored = await backend.storeFile(p.id, file);
+    if (stored) rec.photo = stored;
 
     p.pay[key] = rec;
     sysMsg(p, monthYear(key)+' kirası için dekont yüklendi'+(rec.status === 'partial' ? ' (kısmi: '+tl(total)+')' : ''));
@@ -536,7 +568,8 @@ export async function onSubmit(ev){
     if (!file) return;
     const until = fd.get('until');
     const cat = fd.get('cat');
-    p.docs.push({ id:'d'+Date.now(), cat, name:file.name, at: iso(t0()), until: until || undefined });
+    const path = LIVE ? await backend.storeFile(p.id, file) : null;
+    p.docs.push(Object.assign({ id:uid('d'), cat, name:file.name, at: iso(t0()), until: until || undefined }, path ? { path } : {}));
     if (cat === 'DASK poliçesi' && until) p.dask = until;
     sysMsg(p, cat+' yüklendi: '+file.name);
     save();
@@ -557,13 +590,16 @@ export async function onSubmit(ev){
   }
 
   if (type === 'addProp'){
-    const id = 'p'+Date.now(), t = t0();
+    const id = uid('p'), t = t0();
     const name = String(fd.get('name')).trim();
     const rent = Number(fd.get('rent')) || 0;
+    const phone = String(fd.get('phone') || '');
     S.props[id] = {
       id, name, addr:String(fd.get('addr')).trim(),
-      tenants:[{ id:'t'+Date.now(), name:'Davet bekleniyor', phone:String(fd.get('phone') || ''), email:'' }],
-      landlord: P(S.order[0]).landlord,
+      // Gerçek hesapta kiracı davetle katılır; demoda yer tutucu eklenir.
+      tenants: LIVE ? [] : [{ id:uid('t'), name:'Davet bekleniyor', phone, email:'' }],
+      landlord: LIVE ? { name: backend.live.profile?.name || 'Ev sahibi', phone: backend.live.profile?.phone || '' } : (S.order.length ? P(S.order[0]).landlord : { name:'Ev sahibi', phone:'' }),
+      ownerId: LIVE ? backend.live.user?.id : undefined,
       rent, dueDay: Number(fd.get('due')) || 1,
       rentHistory:[{ from: iso(t), amount: rent, note:'Sözleşme başlangıcı' }],
       expenses:[], value:null, moveOut:null,
@@ -578,7 +614,16 @@ export async function onSubmit(ev){
     go('/ev-sahibi/ev/'+id, { replace:true });
     render();
 
-    const ph = String(fd.get('phone') || '').replace(/\D/g, '');
+    if (LIVE){
+      // Ev sunucuya yazılınca kiracı için davet kodu üretilir.
+      try {
+        const code = await backend.createInvite(id, { name:'', email:'', phone });
+        openSheet('davet-paylas', { pid:id, code });
+      } catch(e){ notify({ title:'Davet oluşturulamadı', body: backend.humanError(e), icon:'home' }, false); }
+      return;
+    }
+
+    const ph = phone.replace(/\D/g, '');
     notify({
       title:'Ev eklendi', body:'Kiracıya davet linkini gönder.', icon:'home',
       actions:[{ label:'WhatsApp ile davet et', run:() => {
@@ -593,9 +638,19 @@ export async function onSubmit(ev){
     const name = String(fd.get('name')).trim();
     const email = String(fd.get('email') || '').trim();
     const phone = String(fd.get('phone') || '').trim();
-    p.tenants.push({ id:'t'+Date.now(), name, email, phone });
+    if (LIVE){
+      try {
+        const code = await backend.createInvite(p.id, { name, email, phone });
+        closeSheet();
+        setTimeout(() => openSheet('davet-paylas', { pid:p.id, code }), 60);
+      } catch(e){ notify({ title:'Davet oluşturulamadı', body: backend.humanError(e), icon:'home' }, false); }
+      return;
+    }
+    p.tenants.push({ id:uid('t'), name, email, phone });
     sysMsg(p, name+' eve kiracı olarak eklendi');
     save(); closeSheet(); render();
+    setTimeout(() => openSheet('davet-paylas', { pid:p.id, code:'DEMO' + String(Math.floor(Math.random() * 9000) + 1000) }), 60);
+    return;
     const digits = phone.replace(/\D/g, '');
     notify({
       title:'Kiracı eklendi',
@@ -608,7 +663,7 @@ export async function onSubmit(ev){
 
   if (type === 'quote'){
     const r = reqOf(p, f.dataset.id);
-    const q = { id:'q'+Date.now(), vendor:String(fd.get('vendor')).trim(), phone:String(fd.get('phone') || '').trim(),
+    const q = { id:uid('q'), vendor:String(fd.get('vendor')).trim(), phone:String(fd.get('phone') || '').trim(),
       amount:Number(fd.get('amount')) || 0, note:String(fd.get('note') || '').trim(), chosen:false };
     r.quotes = r.quotes || [];
     r.quotes.push(q);
@@ -624,14 +679,15 @@ export async function onSubmit(ev){
     const file = f.querySelector('input[type=file]').files[0];
     let expenseId = null;
     if (fd.get('toExpense') && r.cost !== 'Kiracı'){
-      expenseId = 'e'+Date.now();
+      expenseId = uid('e');
       p.expenses = p.expenses || [];
       p.expenses.push({
         id:expenseId, cat:'Tamir ve bakım', amount: r.cost === 'Paylaşımlı' ? Math.round(amount / 2) : amount,
         date, note: r.title + (r.cost === 'Paylaşımlı' ? ' (yarı pay)' : ''), reqId:r.id
       });
     }
-    r.invoice = { amount, date, name: file ? file.name : 'fatura', expenseId };
+    const path = file && LIVE ? await backend.storeFile(p.id, file) : null;
+    r.invoice = Object.assign({ amount, date, name: file ? file.name : 'fatura', expenseId }, path ? { path } : {});
     logReq(r, 'Fatura işlendi: '+tl(amount));
     sysMsg(p, 'Talep faturası: '+r.title+' · '+tl(amount));
     save(); closeSheet(); render();
@@ -644,7 +700,7 @@ export async function onSubmit(ev){
     const data = { cat:String(fd.get('cat')), amount:Number(fd.get('amount')) || 0, date:String(fd.get('date')), note:String(fd.get('note') || '').trim() };
     const id = f.dataset.id;
     if (id) Object.assign(p.expenses.find(e => e.id === id), data);
-    else p.expenses.push(Object.assign({ id:'e'+Date.now() }, data));
+    else p.expenses.push(Object.assign({ id:uid('e') }, data));
     ui.expenseYear = data.date.slice(0, 4);
     save(); closeSheet(); render();
     notify({ title: id ? 'Gider güncellendi' : 'Gider eklendi', body:data.cat+' · '+tl(data.amount), icon:'chart' }, false);
@@ -664,7 +720,7 @@ export async function onSubmit(ev){
   }
 
   if (type === 'deduction'){
-    p.moveOut.deductions.push({ id:'k'+Date.now(), label:String(fd.get('label')).trim(), amount:Number(fd.get('amount')) || 0, note:String(fd.get('note') || '').trim() });
+    p.moveOut.deductions.push({ id:uid('k'), label:String(fd.get('label')).trim(), amount:Number(fd.get('amount')) || 0, note:String(fd.get('note') || '').trim() });
     resetMoveOutApprovals(p);
     save(); closeSheet(); render();
     return;
@@ -793,12 +849,20 @@ export async function onChangeField(ev){
     if (!files.length) return;
     const p = P(d.pid), room = p.moveOut.rooms[Number(d.i)];
     for (const file of files.slice(0, 6)){
-      try { room.shots.push(await shrink(file, 720)); } catch(e){ /* görsel değilse atla */ }
+      const v = await backend.storeFile(d.pid, file, { maxSide:720 });
+      if (v) room.shots.push(v);
     }
     resetMoveOutApprovals(p);
     const ok = save();
     render();
     if (!ok) notify({ title:'Yer kalmadı', body:'Tarayıcı depolaması doldu; fotoğraflar kaydedilemedi.', icon:'cam' }, false);
+    return;
+  }
+
+  if (n === 'signupRole'){
+    // Formu yeniden çizmeden seçimi göster (yazılanlar kaybolmasın).
+    ui.signupRole = ev.target.value;
+    document.querySelectorAll('.rolecard').forEach(c => c.classList.toggle('on', c.querySelector('input').checked));
     return;
   }
 
@@ -818,7 +882,8 @@ export async function onChangeField(ev){
     const room = P(d.pid).inspect.rooms[Number(d.i)];
     room.shots = room.shots || [];
     for (const file of files.slice(0, 6)){
-      try { room.shots.push(await shrink(file, 720)); } catch(e){ /* atla */ }
+      const v = await backend.storeFile(d.pid, file, { maxSide:720 });
+      if (v) room.shots.push(v);
     }
     P(d.pid).inspect.tenantOk = false;
     P(d.pid).inspect.landlordOk = false;

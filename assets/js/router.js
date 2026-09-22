@@ -4,6 +4,12 @@
 
 import { S, ui } from './state.js';
 
+/** Hesap ekranları (giriş, kayıt…) — rol sekmelerinin dışında. */
+const AUTH = ['giris', 'kayit', 'sifre', 'yeni-sifre', 'katil', 'davet'];
+
+/** Gerçek hesap modunda main.js tarafından ayarlanır: yönlendirilecek adresi döndürür. */
+export const guard = { fn: null };
+
 const listeners = [];
 
 /** Kiracı sekmeleri: yol parçası ↔ sekme kimliği. */
@@ -58,7 +64,15 @@ export function parseRoute(hash){
   const seg = path.split('/').filter(Boolean);
 
   // base: sheet kapandığında dönülecek adres (derin linkteki kimlik parçası hariç).
-  const r = { path, base: path, params, sheet: params.s || null, role:'tenant', tab:'panel', pid:null, sub:null, reqId: params.req || null };
+  const r = { path, base: path, params, sheet: params.s || null, role:'tenant', tab:'panel', pid:null, sub:null, reqId: params.req || null, auth:null, code:null };
+
+  if (AUTH.includes(seg[0])){
+    r.auth = seg[0];
+    r.code = seg[1] ? decodeURIComponent(seg[1]) : null;
+    r.role = ui.role || 'tenant';
+    r.tab = null;
+    return r;
+  }
 
   if (seg[0] === 'ev-sahibi'){
     r.role = 'landlord';
@@ -140,10 +154,18 @@ export function onChange(fn){ listeners.push(fn); }
 
 function sync(){
   route = parseRoute(location.hash);
+  const redirect = guard.fn && guard.fn(route);
+  if (redirect && redirect !== route.path){
+    history.replaceState(null, '', '#' + redirect);
+    route = parseRoute(location.hash);
+  }
   if (!route.sheet) sheetPushed = false;
-  ui.role = route.role;
+  if (!route.auth) ui.role = route.role;
   listeners.forEach(fn => fn(route));
 }
+
+/** Koruma kurallarını geçerli adrese yeniden uygular (ör. oturum açılınca). */
+export function recheck(){ sync(); }
 
 export function start(){
   addEventListener('hashchange', sync);

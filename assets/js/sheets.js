@@ -8,6 +8,9 @@ import { P, period, statusOf, remaining, ST, reminders, otherPerson, rentAt, mov
 import { searchBody, isCurrent, installBlock } from './views.js';
 import { esc, opts, tl, fmt, fmtFull, monthYear, parse, iso, t0, daysTo, tm, ago } from './util.js';
 import { screenMap } from './router.js';
+import { LIVE } from './config.js';
+import { live, mediaSrc, inviteLink, markInboxRead } from './backend.js';
+import { isStored, storedPath } from './mapping.js';
 
 function reqOf(p, id){ return p.requests.find(r => r.id === id); }
 
@@ -40,6 +43,8 @@ export function sheetBody(route){
     case 'cikis-baslat': return startMoveOutSheet(p);
     case 'kesinti': return deductionSheet(p);
     case 'iade': return refundSheet(p);
+    case 'hesap': return LIVE ? accountSheet() : null;
+    case 'davet-paylas': return shareInviteSheet(p, route.params.code || route.params.key);
     default: return null;
   }
 }
@@ -48,17 +53,19 @@ function mapSheet(route){
   const map = screenMap();
   const items = route.role === 'tenant' ? map.tenant : map.landlord;
   return '<h3>Ekran haritası</h3>' +
+    (LIVE ? '' :
     '<div class="seg" role="group" aria-label="Rol" style="margin-bottom:12px">' +
       '<button data-act="nav" data-go="/kiraci" aria-pressed="'+(route.role === 'tenant')+'">Kiracı</button>' +
-      '<button data-act="nav" data-go="/ev-sahibi" aria-pressed="'+(route.role === 'landlord')+'">Ev sahibi</button></div>' +
+      '<button data-act="nav" data-go="/ev-sahibi" aria-pressed="'+(route.role === 'landlord')+'">Ev sahibi</button></div>') +
     '<div class="maplist">' + items.map(it =>
       '<button class="'+(it.depth ? 'depth' : '')+'" data-act="nav" data-go="'+esc(it.path)+'"' +
       (isCurrent(route, it) ? ' aria-current="true"' : '')+'>'+(it.depth ? '' : ic(it.icon, 17))+esc(it.label)+'</button>').join('') +
     '</div>' +
-    '<button class="btn ghost block" style="margin-top:14px" data-act="startTour">'+ic('flag', 16)+' Rehberli tura başla</button>';
+    (LIVE ? '' : '<button class="btn ghost block" style="margin-top:14px" data-act="startTour">'+ic('flag', 16)+' Rehberli tura başla</button>');
 }
 
 function inboxSheet(){
+  if (S.inbox.some(n => !n.read)) markInboxRead().catch(() => {});
   S.inbox.forEach(n => { n.read = true; });
   const rem = reminders();
   return '<div class="row" style="justify-content:space-between"><h3 style="margin:0">Bildirimler</h3>' +
@@ -95,18 +102,22 @@ function settingsSheet(){
       ['system','light','dark'].map((v, i) => '<button data-act="theme" data-v="'+v+'" aria-pressed="'+(S.theme === v)+'">'+['Sistem','Açık','Koyu'][i]+'</button>').join('') +
     '</div>' +
 
-    '<h2 style="margin:18px 0 8px">Bildirimleri dene</h2><div class="grid2">' +
-      previews.map(([v, label]) => '<button class="btn small ghost" data-act="preview" data-v="'+v+'">'+label+'</button>').join('') +
-    '</div>' +
+    (LIVE
+      ? '<h2 style="margin:18px 0 8px">Hesap</h2><button class="btn small ghost block" data-act="sheet" data-s="hesap">Hesap ve bildirim ayarları</button>'
+      : '<h2 style="margin:18px 0 8px">Bildirimleri dene</h2><div class="grid2">' +
+          previews.map(([v, label]) => '<button class="btn small ghost" data-act="preview" data-v="'+v+'">'+label+'</button>').join('') +
+        '</div>') +
 
     (installBlock() ? '<h2 style="margin:18px 0 8px">Uygulama</h2>' + installBlock() : '') +
     '<h2 style="margin:18px 0 8px">Veri</h2><div class="stack" style="gap:8px">' +
-      '<button class="btn small ghost" data-act="startTour">'+ic('flag', 15)+' Rehberli tur</button>' +
+      (LIVE ? '' : '<button class="btn small ghost" data-act="startTour">'+ic('flag', 15)+' Rehberli tur</button>') +
       '<button class="btn small ghost" data-act="sheet" data-s="harita">'+ic('map', 15)+' Ekran haritası</button>' +
-      '<button class="btn small ghost" data-act="exportData">Verileri dışa aktar (JSON)</button>' +
-      '<label class="btn small ghost" style="cursor:pointer">Veri içe aktar<input type="file" accept="application/json" class="sr" data-input="importData"></label>' +
-      '<button class="btn small danger" data-act="reset">Demo verisini sıfırla</button></div>' +
-    '<p class="foot">Veriler yalnızca bu tarayıcıda saklanır.</p>';
+      '<button class="btn small ghost" data-act="exportData">'+(LIVE ? 'Verilerimi indir (JSON)' : 'Verileri dışa aktar (JSON)')+'</button>' +
+      (LIVE ? '' :
+        '<label class="btn small ghost" style="cursor:pointer">Veri içe aktar<input type="file" accept="application/json" class="sr" data-input="importData"></label>' +
+        '<button class="btn small danger" data-act="reset">Demo verisini sıfırla</button>') +
+    '</div>' +
+    '<p class="foot">'+(LIVE ? 'Verilerin sunucuda, yalnızca evin üyelerinin erişebileceği şekilde saklanır.' : 'Veriler yalnızca bu tarayıcıda saklanır.')+'</p>';
 }
 
 function newReqSheet(p){
@@ -148,7 +159,7 @@ function reqSheet(p, id){
   }
 
   const shots = (r.shots || []).map((src, j) =>
-    '<div class="thumb"><img src="'+src+'" alt="Talep fotoğrafı '+(j+1)+'"></div>').join('');
+    '<div class="thumb"><img src="'+esc(mediaSrc(src))+'" alt="Talep fotoğrafı '+(j+1)+'"></div>').join('');
   const placeholders = Array.from({ length: Math.min(r.photos || 0, 5) }, () => '<div class="ph">foto</div>').join('');
 
   const timeline = (r.log || []).slice().reverse().map(e =>
@@ -184,10 +195,7 @@ function receiptSheet(p, key){
   const rc = p.pay[key] || {};
   const st = statusOf(p, key);
   return '<h3>'+monthYear(key)+' dekontu</h3><div class="stack">' +
-    '<div class="ph" style="width:100%;height:190px;font-size:14px">' +
-      (rc.photo
-        ? '<img src="'+rc.photo+'" alt="Dekont görseli" style="width:100%;height:100%;object-fit:contain;border-radius:10px">'
-        : esc(rc.receipt || 'Dekont yok')) + '</div>' +
+    receiptPreview(rc) +
     '<div class="kv"><span>Tutar</span><span>'+tl(rc.amount != null ? rc.amount : rentAt(p, key))+'</span></div>' +
     '<div class="kv"><span>Beklenen</span><span>'+tl(rentAt(p, key))+'</span></div>' +
     '<div class="kv"><span>Ödeme tarihi</span><span>'+(rc.date ? fmtFull(parse(rc.date)) : '—')+'</span></div>' +
@@ -309,7 +317,9 @@ function quotesSection(p, r){
           '</div></div>').join('') + '</div>'
       : '<div class="muted">Henüz teklif yok. Ustalardan aldığın fiyatları ekleyip karşılaştırabilirsin.</div>') +
     (r.invoice
-      ? '<div class="note">Fatura: '+tl(r.invoice.amount)+' · '+esc(r.invoice.name)+' · '+fmtFull(parse(r.invoice.date)) +
+      ? '<div class="note">Fatura: '+tl(r.invoice.amount)+' · ' +
+          (r.invoice.path ? '<a class="doclink" href="'+esc(mediaSrc(r.invoice.path))+'" target="_blank" rel="noopener">'+esc(r.invoice.name)+'</a>' : esc(r.invoice.name)) +
+          ' · '+fmtFull(parse(r.invoice.date)) +
           (r.invoice.expenseId ? ' · gider defterine işlendi' : '')+'</div>'
       : landlord ? '<button class="btn small ghost" data-act="sheet" data-s="fatura" data-pid="'+p.id+'" data-id="'+r.id+'">Fatura ekle</button>' : '') +
     '</section>';
@@ -401,6 +411,75 @@ function refundSheet(p){
     '<label class="field">Tarih<input name="date" type="date" required value="'+iso(t0())+'"></label></div>' +
     '<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">Vazgeç</button>' +
     '<button class="btn primary" style="flex:1">Kaydet</button></div></form>';
+}
+
+/* ---------------- dekont önizleme ---------------- */
+
+function receiptPreview(rc){
+  const v = rc.photo;
+  const isPdf = isStored(v) && /\.pdf$/i.test(storedPath(v));
+  if (v && !isPdf)
+    return '<div class="ph" style="width:100%;height:190px;font-size:14px"><img src="'+esc(mediaSrc(v))+'" alt="Dekont görseli" style="width:100%;height:100%;object-fit:contain;border-radius:10px"></div>';
+  if (isPdf)
+    return '<a class="btn ghost block" href="'+esc(mediaSrc(v))+'" target="_blank" rel="noopener">'+ic('doc', 16)+' '+esc(rc.receipt || 'Dekontu aç')+'</a>';
+  return '<div class="ph" style="width:100%;height:120px;font-size:14px">'+esc(rc.receipt || 'Dekont yok')+'</div>';
+}
+
+/* ---------------- hesap ---------------- */
+
+function accountSheet(){
+  const prof = live.profile || {};
+  const push = ui.pushState || 'unknown';
+  const pushText = {
+    on:'Açık — kira günü, dekont, talep ve mesajlar telefonuna gelir.',
+    off:'Kapalı.',
+    denied:'Tarayıcı ayarlarında engellenmiş. Site ayarlarından izin vermelisin.',
+    install:'iPhone’da bildirimler için önce Evim’i ana ekrana ekle (Paylaş → Ana Ekrana Ekle).',
+    unsupported:'Bu tarayıcı anlık bildirimleri desteklemiyor.',
+    unknown:'Kontrol ediliyor…'
+  }[push];
+  return '<h3>Hesap</h3><div class="stack">' +
+    '<div class="card"><div class="kv"><span>E-posta</span><span>'+esc(live.user?.email || '')+'</span></div>' +
+      '<div class="kv"><span>Hesap türü</span><span>'+(prof.role === 'landlord' ? 'Ev sahibi' : 'Kiracı')+'</span></div></div>' +
+    '<form class="stack" data-form="profile">' +
+      '<label class="field">Ad soyad<input name="name" required maxlength="60" value="'+esc(prof.name || '')+'"></label>' +
+      '<label class="field">Telefon<input name="phone" type="tel" value="'+esc(prof.phone || '')+'"></label>' +
+      '<button class="btn primary block">Kaydet</button></form>' +
+
+    '<section class="card stack" style="gap:8px"><h2>Bildirimler</h2>' +
+      '<div class="muted">'+esc(pushText)+'</div>' +
+      (push === 'on' || push === 'off'
+        ? '<button class="btn small '+(push === 'on' ? 'ghost' : 'primary')+'" data-act="togglePush">'+(push === 'on' ? 'Anlık bildirimleri kapat' : 'Anlık bildirimleri aç')+'</button>' : '') +
+      '<label class="toggle">E-posta ile de bildir<input type="checkbox" data-input="setb" data-k="email"'+(S.settings.email ? ' checked' : '')+'></label>' +
+    '</section>' +
+
+    '<details class="card"><summary><b>Şifreyi değiştir</b></summary><form class="stack" data-form="newpass" style="margin-top:10px">' +
+      '<label class="field">Yeni şifre<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>' +
+      '<label class="field">Yeni şifre (tekrar)<input name="password2" type="password" required minlength="8" autocomplete="new-password"></label>' +
+      '<button class="btn primary block">Şifreyi güncelle</button></form></details>' +
+
+    (ui.authMsg ? '<div class="note'+(ui.authMsg.kind === 'error' ? ' warn' : '')+'">'+esc(ui.authMsg.text)+'</div>' : '') +
+    '<button class="btn ghost block" data-act="signOut">Çıkış yap</button>' +
+    '<button class="btn small danger block" data-act="deleteAccount">Hesabı sil</button>' +
+    '<p class="foot">Oturumun bu cihazda açık kalır; çıkış yapana kadar tekrar giriş gerekmez.</p></div>';
+}
+
+/* ---------------- davet paylaşımı ---------------- */
+
+function shareInviteSheet(p, code){
+  if (!code) return null;
+  const link = LIVE ? inviteLink(code) : location.origin + location.pathname + '#/katil/' + code;
+  const text = 'Merhaba, '+p.name+' için Evim’de ortak panelimize katılır mısın? Davet kodun: '+code+' — '+link;
+  return '<h3>Kiracını davet et</h3><div class="stack">' +
+    '<div class="muted">Kiracın bu bağlantıyla kayıt olunca ya da kodu girince '+esc(p.name)+' paneline bağlanır. Kod 30 gün geçerlidir.</div>' +
+    '<div class="codebox" aria-label="Davet kodu">'+esc(code)+'</div>' +
+    '<input class="inline" id="inviteLink" readonly value="'+esc(link)+'" aria-label="Davet bağlantısı">' +
+    '<div class="grid2">' +
+      '<button class="btn primary" data-act="copyInvite">'+ic('doc', 16)+' Kopyala</button>' +
+      '<a class="btn ghost" href="https://wa.me/?text='+encodeURIComponent(text)+'" target="_blank" rel="noopener">WhatsApp</a></div>' +
+    '<a class="btn ghost block" href="mailto:?subject='+encodeURIComponent('Evim daveti')+'&body='+encodeURIComponent(text)+'">E-posta ile gönder</a>' +
+    (LIVE ? '' : '<div class="note">Demo modunda davet gerçek değildir; kod yalnızca akışı göstermek içindir.</div>') +
+    '</div>';
 }
 
 /* ---------------- katman yönetimi ve odak tuzağı ---------------- */

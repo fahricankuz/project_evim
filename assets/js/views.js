@@ -4,6 +4,8 @@
 import { S, ui, STEPS, DOC_CATS, CONDITIONS } from './state.js';
 import { estimate } from './tax.js';
 import { pwa } from './pwa.js';
+import { LIVE } from './config.js';
+import { live, mediaSrc } from './backend.js';
 import { I, ic } from './icons.js';
 import { current, screenMap, PROP_SUBS } from './router.js';
 import {
@@ -22,8 +24,9 @@ export function header(title, sub, backPath){
   const n = unreadCount();
   const roleLabel = ui.role === 'tenant' ? 'Kiracı görünümü' : 'Ev sahibi görünümü';
   return (
+    (LIVE ? syncPill() :
     '<button class="rolepill" data-act="switchRole" aria-label="Görünümü değiştir">' +
-      '<i></i>'+roleLabel+' · değiştir</button>' +
+      '<i></i>'+roleLabel+' · değiştir</button>') +
     '<div class="top">' +
       '<div class="row" style="align-items:flex-start;gap:8px">' +
         (backPath ? '<button class="iconbtn" data-act="nav" data-go="'+esc(backPath)+'" aria-label="Geri">'+I.back+'</button>' : '') +
@@ -36,6 +39,22 @@ export function header(title, sub, backPath){
       '</div>' +
     '</div>'
   );
+}
+
+/** Gerçek hesapta kayıt durumu: kullanıcı değişikliğin gittiğini görsün. */
+function syncPill(){
+  const st = live.status;
+  const map = {
+    syncing: ['Kaydediliyor…', 'wait'],
+    offline: ['Çevrimdışı · bu cihazda saklanıyor', 'off'],
+    error:   ['Kaydedilemedi', 'err'],
+    synced:  ['Kaydedildi', 'ok'],
+    idle:    ['Bağlanıyor…', 'wait']
+  };
+  const [label, cls] = map[st] || map.idle;
+  const who = live.profile ? live.profile.name : '';
+  return '<button class="rolepill status '+cls+'" data-act="sheet" data-s="hesap" aria-label="Hesap: '+esc(who)+' · '+label+'">' +
+    '<i></i>'+esc(who ? who.split(' ')[0] + ' · ' : '')+label+'</button>';
 }
 
 function payAction(p, per){
@@ -224,7 +243,10 @@ export function secDocs(p){
       (ds.length
         ? '<div class="list" style="margin-top:8px">'+ds.map(d => {
             const soon = d.until && daysTo(d.until) <= 60;
-            return '<div class="li"><div><b style="font-size:14px">'+esc(d.name)+'</b>' +
+            const title = d.path
+              ? '<a class="doclink" href="'+esc(mediaSrc(d.path))+'" target="_blank" rel="noopener">'+esc(d.name)+'</a>'
+              : esc(d.name);
+            return '<div class="li"><div><b style="font-size:14px">'+title+'</b>' +
               '<div class="muted">Yüklendi '+fmtFull(parse(d.at)) +
               (d.until ? ' · '+(d.cat === 'Tahliye taahhütnamesi' ? 'tahliye' : 'bitiş')+' '+fmtFull(parse(d.until)) : '')+'</div></div>' +
               '<div class="row" style="gap:6px">' +
@@ -251,7 +273,7 @@ export function secInspect(p){
   const ins = p.inspect;
   const rows = ins.rooms.map((r, i) => {
     const shots = (r.shots || []).map((src, j) =>
-      '<div class="thumb"><img src="'+src+'" alt="'+esc(r.n)+' fotoğrafı '+(j+1)+'">' +
+      '<div class="thumb"><img src="'+esc(mediaSrc(src))+'" alt="'+esc(r.n)+' fotoğrafı '+(j+1)+'">' +
       '<button data-act="removeShot" data-pid="'+p.id+'" data-i="'+i+'" data-j="'+j+'" aria-label="Fotoğrafı sil">×</button></div>').join('');
     const count = (r.photos || 0) + (r.shots || []).length;
     return '<section class="card stack" style="gap:10px">' +
@@ -383,7 +405,14 @@ function portfolio(){
 
   const openTotal = S.order.reduce((a, id) => a + openReqs(P(id)).length, 0);
 
-  return header('Portföyüm', S.order.length+' ev · hepsi kirada') + '<div class="stack">' +
+  if (!S.order.length){
+    return header('Portföyüm', 'Henüz ev yok') + '<div class="stack">' +
+      '<div class="empty"><b style="font-size:17px;color:var(--ink)">İlk evini ekle</b><br>' +
+      'Evi ekleyince kiracın için bir davet kodu oluşur. Kiracın kodla katılınca kira, talep ve belgeleri birlikte takip edersiniz.</div>' +
+      '<button class="btn primary block" data-act="sheet" data-s="ev-ekle">'+ic('plus')+' Ev ekle</button></div>';
+  }
+
+  return header('Portföyüm', S.order.length+' ev') + '<div class="stack">' +
     '<section class="hero stack" style="gap:12px"><div class="label">'+monthYear(m.key)+' kira durumu</div>' +
       '<div class="row" style="justify-content:space-between;align-items:flex-end">' +
         '<div><div class="big">'+tl(m.collected)+'</div>' +
@@ -440,7 +469,12 @@ function tenantsCard(p){
     '<div class="row" style="justify-content:space-between"><h2>'+(p.tenants.length > 1 ? 'Kiracılar' : 'Kiracı')+'</h2>' +
       '<button class="btn small ghost" data-act="sheet" data-s="kiraci-ekle" data-pid="'+p.id+'">'+ic('plus', 15)+' Kiracı ekle</button></div>' +
     (p.tenants.length
-      ? p.tenants.map(t => personRow(initials(t.name), t.name, t.email || t.phone || 'İletişim bilgisi yok',
+      ? p.tenants.map(t => t.pending
+        ? personRow('?', t.name || 'Davet bekleniyor', (t.name ? 'Davet bekleniyor · ' : 'Henüz katılmadı · ')+'kod '+t.code,
+            '<div class="row" style="gap:6px">' +
+              '<button class="btn small ghost" data-act="sheet" data-s="davet-paylas" data-pid="'+p.id+'" data-key="'+esc(t.code)+'">Paylaş</button>' +
+              '<button class="iconbtn sm" data-act="removeTenant" data-pid="'+p.id+'" data-id="'+esc(t.id)+'" aria-label="Daveti iptal et">'+ic('x', 16)+'</button></div>')
+        : personRow(initials(t.name), t.name, t.email || t.phone || 'İletişim bilgisi yok',
           '<div class="row" style="gap:6px">' +
             (t.phone ? '<a class="iconbtn sm" href="tel:'+esc(t.phone)+'" aria-label="'+esc(t.name)+' ara">'+ic('phone', 16)+'</a>' : '') +
             '<button class="iconbtn sm" data-act="removeTenant" data-pid="'+p.id+'" data-id="'+esc(t.id)+'" aria-label="'+esc(t.name)+' kiracısını çıkar">'+ic('x', 16)+'</button></div>')).join('')
@@ -487,9 +521,9 @@ export function secMoveOut(p){
     const entry = p.inspect.rooms.find(x => x.n === r.n);
     const entryCount = entry ? (entry.photos || 0) + (entry.shots || []).length : 0;
     const shots = (r.shots || []).map((src, j) =>
-      '<div class="thumb"><img src="'+src+'" alt="'+esc(r.n)+' çıkış fotoğrafı '+(j+1)+'">' +
+      '<div class="thumb"><img src="'+esc(mediaSrc(src))+'" alt="'+esc(r.n)+' çıkış fotoğrafı '+(j+1)+'">' +
       (locked ? '' : '<button data-act="removeExitShot" data-pid="'+p.id+'" data-i="'+i+'" data-j="'+j+'" aria-label="Fotoğrafı sil">×</button>')+'</div>').join('');
-    const entryShots = entry ? (entry.shots || []).slice(0, 4).map(src => '<img src="'+src+'" alt="'+esc(r.n)+' giriş fotoğrafı">').join('') : '';
+    const entryShots = entry ? (entry.shots || []).slice(0, 4).map(src => '<img src="'+esc(mediaSrc(src))+'" alt="'+esc(r.n)+' giriş fotoğrafı">').join('') : '';
     const cls = r.condition === 'Aynı' ? 'ok' : r.condition === 'Yıpranmış' ? 'wait' : r.condition ? 'bad' : '';
     return '<section class="card stack" style="gap:10px">' +
       '<div class="row" style="justify-content:space-between"><b style="font-size:16px">'+esc(r.n)+'</b>' +
@@ -777,9 +811,38 @@ export function installBlock(){
   return '';
 }
 
-export function shell(route){
+export function shell(route, bare){
   const map = screenMap();
   const items = route.role === 'tenant' ? map.tenant : map.landlord;
+  const brand = '<div class="brand"><div class="mark">'+ic('home', 20)+'</div><div><b>Evim</b>' +
+      '<div class="muted" style="font-size:12px">'+(LIVE ? 'Kira yönetimi' : 'Kira yönetimi · demo')+'</div></div></div>';
+
+  if (bare){
+    return brand + '<p class="muted">Kiracı ve ev sahibi aynı kaydı görür: ödemeler, talepler, belgeler, tutanaklar ve depozito tek yerde.</p>' +
+      '<ul class="bullets"><li>Dekont yükle, onay al</li><li>Arıza ve tadilat taleplerini adım adım izle</li>' +
+      '<li>Giriş–çıkış tutanağı ve depozito hesabı</li><li>Kira artışını yasal sınırla hesapla</li></ul>';
+  }
+
+  if (LIVE){
+    const prof = live.profile || {};
+    const themeBtnL = (v, label, icon) =>
+      '<button class="btn small '+(S.theme === v ? 'primary' : 'ghost')+'" data-act="theme" data-v="'+v+'">'+ic(icon, 15)+' '+label+'</button>';
+    return brand +
+      '<div class="card stack" style="gap:8px;padding:14px"><div class="row">' +
+        '<div class="avatar">'+esc(initials(prof.name || '?'))+'</div>' +
+        '<div style="min-width:0"><b>'+esc(prof.name || '')+'</b><div class="muted" style="font-size:12.5px">'+(prof.role === 'landlord' ? 'Ev sahibi' : 'Kiracı')+' · '+esc(live.user?.email || '')+'</div></div></div>' +
+        '<button class="btn small ghost" data-act="sheet" data-s="hesap">Hesap ve bildirimler</button></div>' +
+      '<div><h2>Ekranlar</h2><div class="maplist" style="margin-top:6px">' +
+        items.map(it => '<button class="'+(it.depth ? 'depth' : '')+'" data-act="nav" data-go="'+esc(it.path)+'"' +
+          (isCurrent(route, it) ? ' aria-current="true"' : '')+'>'+(it.depth ? '' : ic(it.icon, 17))+esc(it.label)+'</button>').join('') +
+      '</div></div>' +
+      '<div><h2>Tema</h2><div class="shellgrid" style="margin-top:6px">' +
+        themeBtnL('system','Sistem','gear')+themeBtnL('light','Açık','sun')+themeBtnL('dark','Koyu','moon')+'</div></div>' +
+      '<div class="stack" style="gap:8px"><h2>Araçlar</h2>' + installBlock() +
+        '<button class="btn small ghost" data-act="sheet" data-s="arama">'+ic('search', 15)+' Ara</button>' +
+        '<button class="btn small ghost" data-act="exportData">Verilerimi indir</button>' +
+        '<button class="btn small ghost" data-act="signOut">Çıkış yap</button></div>';
+  }
   const themeBtn = (v, label, icon) =>
     '<button class="btn small '+(S.theme === v ? 'primary' : 'ghost')+'" data-act="theme" data-v="'+v+'">'+ic(icon, 15)+' '+label+'</button>';
 

@@ -10,6 +10,7 @@
     "test:ui": "playwright test --ui"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
     "@playwright/test": "1.49.1"
   }
 }

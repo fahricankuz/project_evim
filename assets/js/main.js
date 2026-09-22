@@ -11,6 +11,11 @@ import { notify } from './notify.js';
 import { up } from './util.js';
 import { isActive as tourActive } from './tour.js';
 import { initPwa, pwa } from './pwa.js';
+import { LIVE } from './config.js';
+import * as backend from './backend.js';
+import { guard as authGuard, onAuthEvent, handleJoinRoute, setRerender } from './auth.js';
+import { guard, recheck } from './router.js';
+import { softRender } from './render.js';
 
 applyTheme();
 
@@ -85,11 +90,43 @@ phone.addEventListener('touchend', ev => {
 
 /* ---- açılış ---- */
 
-onChange(() => render());
-start();
+onChange(route => {
+  render();
+  if (LIVE) handleJoinRoute(route);
+});
 
 pwa.onChange = () => render();
 initPwa();
+
+if (LIVE){
+  guard.fn = authGuard;
+  setRerender(() => render());
+  backend.setHandlers({
+    onData: (info = {}) => {
+      if (info.notification){
+        const n = info.notification;
+        notify({ title:n.title, body:n.body, icon:'bell', actions: n.go ? [{ label:'Git', run:() => go(n.go) }] : undefined }, false);
+      }
+      if (info.soft) softRender(); else render();
+    },
+    onAuth: evt => onAuthEvent(evt)
+  });
+  start();                       // yükleniyor ya da giriş ekranı
+  try {
+    await backend.init();
+    if (backend.live.user){
+      ui.meTenant = backend.live.user.id;
+      await backend.openSession();
+    }
+  } catch(e){
+    console.error(e);
+    notify({ title:'Sunucuya bağlanılamadı', body: backend.humanError(e), icon:'bell',
+      actions:[{ label:'Tekrar dene', run:() => location.reload() }] }, false);
+  }
+  recheck();
+} else {
+  start();
+}
 
 if (bootInfo.migratedFrom){
   setTimeout(() => notify({ title:'Verin güncellendi', body:'Kayıtlı verin yeni sürüme taşındı; eski hali yedek olarak saklandı.', icon:'doc' }, false), 400);
@@ -97,7 +134,7 @@ if (bootInfo.migratedFrom){
   setTimeout(() => notify({ title:'Salt okunur mod', body:'Bu veri uygulamanın daha yeni bir sürümüyle kaydedilmiş. Değişiklikler kaydedilmeyecek.', icon:'doc' }, false), 400);
 }
 
-if (!S.seenHint){
+if (!LIVE && !S.seenHint){
   S.seenHint = true;
   save();
   setTimeout(() => notify({
@@ -109,7 +146,7 @@ if (!S.seenHint){
 }
 
 setTimeout(() => {
-  if (current().sheet || tourActive()) return;
+  if (current().sheet || current().auth || tourActive() || (LIVE && !backend.live.loaded)) return;
   const r = reminders()[0];
   if (r) notify({
     title: up(r.t), body:r.b, icon:'bell',

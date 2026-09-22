@@ -2,6 +2,7 @@
 
 import { t0, iso, add, addM, mkey, parse, DAY } from './util.js';
 import { VERSION, LEGACY_KEYS, migrate } from './migrate.js';
+import { LIVE } from './config.js';
 
 export { VERSION };
 export const KEY = 'evim';
@@ -239,14 +240,52 @@ function load(){
   return seed();
 }
 
-export let S = load();
+/** Gerçek hesap modunda başlangıçta boş durum; veri oturum açılınca gelir. */
+export function emptyState(){
+  return {
+    v: VERSION, lang:'tr', theme:'system', seenHint:true, tourDone:true,
+    myHome:null, props:{}, order:[], inbox:[],
+    settings:{ rentDays:3, renewDays:60, insDays:30, evictDays:90, reqUpdates:true, lateNotice:true }
+  };
+}
+
+function initial(){
+  if (!LIVE) return load();
+  const s = emptyState();
+  // Tema ve dil tercihi oturumdan bağımsızdır.
+  try {
+    const pref = JSON.parse(localStorage.getItem('evim-tercih')) || {};
+    if (pref.theme) s.theme = pref.theme;
+    if (pref.lang) s.lang = pref.lang;
+  } catch(e){}
+  return s;
+}
+
+export let S = initial();
 export function isReadOnly(){ return readOnly; }
 
+/** Kayıt anahtarı: demo 'evim', gerçek hesapta kullanıcıya özel. */
+let storageKey = LIVE ? null : KEY;
+export function useStorageKey(k){ storageKey = k; }
+
+/** save() sonrası çağrılır; gerçek hesapta sunucu eşitlemesini tetikler. */
+export const hooks = { afterSave: null };
+
 /** Kalıcılık. Kota dolarsa fotoğrafları atıp yeniden dener. */
+/** Değişikliği kaydeder: cihaza yazar ve (gerçek hesapta) sunucuya gönderir. */
 export function save(){
   if (readOnly) return false;
+  const ok = saveLocal();
+  if (hooks.afterSave) hooks.afterSave();
+  return ok;
+}
+
+/** Yalnızca cihaza yazar. Kota dolarsa fotoğrafları atıp yeniden dener. */
+export function saveLocal(){
+  try { localStorage.setItem('evim-tercih', JSON.stringify({ theme:S.theme, lang:S.lang })); } catch(e){}
+  if (readOnly || !storageKey) return false;
   try {
-    localStorage.setItem(KEY, JSON.stringify(S));
+    localStorage.setItem(storageKey, JSON.stringify(S));
     return true;
   } catch(e){
     try {
@@ -256,7 +295,7 @@ export function save(){
         p.requests.forEach(r => { r.shots = []; });
         Object.values(p.pay).forEach(rec => { delete rec.photo; });
       });
-      localStorage.setItem(KEY, JSON.stringify(slim));
+      localStorage.setItem(storageKey, JSON.stringify(slim));
       S = slim;
       return false;
     } catch(e2){ return false; }
@@ -264,10 +303,11 @@ export function save(){
 }
 
 /** Durumu tamamen değiştirir (sıfırlama ve içe aktarma için). */
-export function replaceState(next){
+/** Durumu tamamen değiştirir (sıfırlama, içe aktarma, sunucudan yükleme). */
+export function replaceState(next, { silent = false } = {}){
   readOnly = false;
   S = next;
-  save();
+  if (!silent) saveLocal();
   applyTheme();
 }
 
@@ -279,7 +319,9 @@ export const ui = {
   q:'',
   renewal:{ cpi:null, amount:null },
   lastChatKey:null,
-  tour:null
+  tour:null,
+  media:{},        // depo yolu → görüntülenebilir adres (imzalı bağlantı ya da data URL)
+  authMsg:null     // giriş ekranlarında gösterilecek durum mesajı
 };
 
 export function applyTheme(){
