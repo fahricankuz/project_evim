@@ -10,6 +10,7 @@ import { reminders, normalizeAll } from './logic.js';
 import { notify } from './notify.js';
 import { up } from './util.js';
 import { isActive as tourActive } from './tour.js';
+import { initPwa, pwa } from './pwa.js';
 
 applyTheme();
 
@@ -86,6 +87,9 @@ phone.addEventListener('touchend', ev => {
 
 onChange(() => render());
 start();
+
+pwa.onChange = () => render();
+initPwa();
 
 if (bootInfo.migratedFrom){
   setTimeout(() => notify({ title:'Verin güncellendi', body:'Kayıtlı verin yeni sürüme taşındı; eski hali yedek olarak saklandı.', icon:'doc' }, false), 400);

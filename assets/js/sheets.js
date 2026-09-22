@@ -5,7 +5,7 @@ import { S, ui, CATS, DOC_CATS, COST_OPTS, STEPS, EXPENSE_CATS, DEDUCTION_PRESET
 import { I, ic } from './icons.js';
 import { current } from './router.js';
 import { P, period, statusOf, remaining, ST, reminders, otherPerson, rentAt, moveOutSummary } from './logic.js';
-import { searchBody, isCurrent } from './views.js';
+import { searchBody, isCurrent, installBlock } from './views.js';
 import { esc, opts, tl, fmt, fmtFull, monthYear, parse, iso, t0, daysTo, tm, ago } from './util.js';
 import { screenMap } from './router.js';
 
@@ -99,6 +99,7 @@ function settingsSheet(){
       previews.map(([v, label]) => '<button class="btn small ghost" data-act="preview" data-v="'+v+'">'+label+'</button>').join('') +
     '</div>' +
 
+    (installBlock() ? '<h2 style="margin:18px 0 8px">Uygulama</h2>' + installBlock() : '') +
     '<h2 style="margin:18px 0 8px">Veri</h2><div class="stack" style="gap:8px">' +
       '<button class="btn small ghost" data-act="startTour">'+ic('flag', 15)+' Rehberli tur</button>' +
       '<button class="btn small ghost" data-act="sheet" data-s="harita">'+ic('map', 15)+' Ekran haritası</button>' +

@@ -3,6 +3,7 @@
 
 import { S, ui, STEPS, DOC_CATS, CONDITIONS } from './state.js';
 import { estimate } from './tax.js';
+import { pwa } from './pwa.js';
 import { I, ic } from './icons.js';
 import { current, screenMap, PROP_SUBS } from './router.js';
 import {
@@ -766,6 +767,16 @@ export function isCurrent(route, item){
   return route.path.startsWith(item.path + '/');
 }
 
+/** Kurulum önerisi: tarayıcı destekliyorsa düğme, iOS'ta talimat, kuruluysa hiçbir şey. */
+export function installBlock(){
+  if (pwa.installed) return '';
+  if (pwa.installable)
+    return '<button class="btn small primary" data-act="install">'+ic('home', 15)+' Uygulamayı yükle</button>';
+  if (pwa.ios)
+    return '<div class="note" style="font-size:13px">Ana ekrana eklemek için Safari’de <b>Paylaş</b> → <b>Ana Ekrana Ekle</b>.</div>';
+  return '';
+}
+
 export function shell(route){
   const map = screenMap();
   const items = route.role === 'tenant' ? map.tenant : map.landlord;
@@ -789,7 +800,7 @@ export function shell(route){
     '<div><h2>Tema</h2><div class="shellgrid" style="margin-top:6px">' +
       themeBtn('system','Sistem','gear')+themeBtn('light','Açık','sun')+themeBtn('dark','Koyu','moon')+'</div></div>' +
 
-    '<div class="stack" style="gap:8px"><h2>Araçlar</h2>' +
+    '<div class="stack" style="gap:8px"><h2>Araçlar</h2>' + installBlock() +
       '<button class="btn small ghost" data-act="startTour">'+ic('flag', 15)+' Rehberli tura başla</button>' +
       '<button class="btn small ghost" data-act="sheet" data-s="arama">'+ic('search', 15)+' Ara</button>' +
       '<button class="btn small ghost" data-act="exportData">Verileri dışa aktar</button>' +

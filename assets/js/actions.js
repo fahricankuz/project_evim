@@ -11,6 +11,7 @@ import { render, refreshLayer } from './render.js';
 import { notify } from './notify.js';
 import { ask } from './confirm.js';
 import { migrate } from './migrate.js';
+import { install } from './pwa.js';
 import { startTour, nextStep, prevStep, endTour, TOUR } from './tour.js';
 import {
   iso, t0, parse, fmt, fmtFull, monthYear, tl, daysTo, shrink, download, esc, announce
@@ -410,6 +411,8 @@ export const A = {
       (mo.refunded ? '\nİade yapıldı: '+tl(mo.refunded.amount)+' · '+fmtFull(parse(mo.refunded.date)) : '');
     openText('Çıkış raporu', body);
   },
+
+  install: async () => { await install(); render(); },
 
   /* ---- tur ---- */
   startTour: () => { startTour(); closeSheet(); tourGo(); render(); },
