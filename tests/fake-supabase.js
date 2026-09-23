@@ -5,7 +5,7 @@
 
 const KEY = '__fakedb';
 const TABLES = ['profiles','properties','property_shared','memberships','invites','payments','rent_history',
-                'requests','messages','documents','expenses','notifications','push_subscriptions','subscriptions'];
+                'requests','messages','documents','expenses','notifications','push_subscriptions','subscriptions','device_tokens'];
 
 function load(){
   try { const d = JSON.parse(localStorage.getItem(KEY)); if (d){ TABLES.forEach(t => d.tables[t] = d.tables[t] || []); return d; } } catch(e){}
@@ -21,7 +21,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const KEYS = {
   profiles:['id'], properties:['id'], property_shared:['property_id'], memberships:['property_id','user_id'],
   invites:['code'], payments:['property_id','month'], rent_history:['id'], requests:['id'], messages:['id'],
-  documents:['id'], expenses:['id'], notifications:['id'], push_subscriptions:['endpoint'], subscriptions:['user_id']
+  documents:['id'], expenses:['id'], notifications:['id'], push_subscriptions:['endpoint'], subscriptions:['user_id'], device_tokens:['token']
 };
 
 function defaults(table, row, db){
@@ -120,13 +120,14 @@ class Query {
   }
 }
 
-export function createClient(){
+export function createClient(url, key, opts){
   const listeners = [];
   const emit = (evt, session) => listeners.forEach(cb => setTimeout(() => cb(evt, session), 0));
 
   const client = {
     _calls: [],
     _fail: null,
+    _opts: opts,
     auth: {
       async getSession(){ return { data:{ session: load().session }, error:null }; },
       onAuthStateChange(cb){
@@ -158,7 +159,17 @@ export function createClient(){
         return { data:{ session: db.session, user: db.session.user }, error:null };
       },
       async signOut(){ const db = load(); db.session = null; persist(db); emit('SIGNED_OUT', null); return { error:null }; },
-      async resetPasswordForEmail(){ return { data:{}, error:null }; },
+      async resetPasswordForEmail(email, o){ client._calls.push({ reset:email, redirectTo:o && o.redirectTo }); return { data:{}, error:null }; },
+      async exchangeCodeForSession(code){
+        client._calls.push({ exchange:code });
+        const db = load();
+        const u = db.users[0];
+        if (!u) return { data:{}, error:{ message:'invalid code' } };
+        db.session = { user:{ id:u.id, email:u.email }, access_token:'fake' };
+        persist(db);
+        emit('SIGNED_IN', db.session);
+        return { data:{ session:db.session, user:db.session.user, redirectType: code.startsWith('recovery') ? 'recovery' : null }, error:null };
+      },
       async updateUser({ password }){
         const db = load();
         const u = db.users.find(x => x.id === db.session?.user.id);

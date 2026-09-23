@@ -2,7 +2,7 @@
 
 Uygulama, `assets/js/config.js` boşken **demo modunda** çalışır: hesap yok,
 veriler yalnızca o tarayıcıda. Bu kılavuz, e-posta ve şifreyle giriş yapılan,
-kiracı ile ev sahibinin kendi cihazlarından aynı veriyi gördüğü gerçek sürümü
+kiracı ile mülk sahibinin kendi cihazlarından aynı veriyi gördüğü gerçek sürümü
 kurmak içindir.
 
 Gerekenler: bir [Supabase](https://supabase.com) hesabı (ücretsiz katman
@@ -121,9 +121,11 @@ Uygulamada **Hesap → Anlık bildirimleri aç**. Başka bir hesaptan mesaj
 gönderince bildirim gelmeli.
 
 - **Android / masaüstü Chrome, Edge, Firefox**: doğrudan çalışır.
-- **iPhone (iOS 16.4+)**: önce Safari'de **Paylaş → Ana Ekrana Ekle**, sonra
-  uygulamayı ana ekrandan açıp bildirimleri aç. Apple, ana ekrana eklenmemiş
-  sitelere bildirim izni vermiyor.
+- **iPhone (iOS 16.4+), web sürümü**: önce Safari'de **Paylaş → Ana Ekrana
+  Ekle**, sonra uygulamayı ana ekrandan açıp bildirimleri aç. Apple, ana ekrana
+  eklenmemiş sitelere bildirim izni vermiyor.
+- **Mağaza uygulaması (iOS/Android)**: APNs ve Firebase anahtarları gerekir;
+  bkz. [mobil.md → Anlık bildirimler](mobil.md#4-anlık-bildirimler).
 
 ### 5.5 E-posta bildirimleri (isteğe bağlı)
 
@@ -135,21 +137,29 @@ npx supabase secrets set RESEND_API_KEY="re_..." EMAIL_FROM="Evim <bildirim@alan
 
 Kullanıcılar **Hesap → E-posta ile de bildir** seçeneğiyle açar.
 
-## 6. GitHub Pages
+## 6. Abonelik
+
+Mülk sahipleri abonelikle kullanır; kiracılar ücretsizdir. Mağaza ve
+RevenueCat kurulumu ile `billing` fonksiyonu için: [abonelik.md](abonelik.md).
+Abonelik kurulmadan da uygulama çalışır: her mülk sahibi 14 günlük denemeyle
+başlar.
+
+## 7. GitHub Pages
 
 Depo → **Settings → Pages → Source: GitHub Actions**. Varsayılan dala her
 push'ta site `https://KULLANICI.github.io/project_evim/` adresinde güncellenir.
 
 Kendi alan adını kullanacaksan Pages ayarlarından ekle ve 3. adımdaki
-Supabase adreslerini de güncelle.
+Supabase adreslerini de güncelle. Telefon uygulamasının bağlantıları için de
+alan adı gerekir: [mobil.md](mobil.md#3-bağlantıların-uygulamayı-açması).
 
-## 7. Kontrol listesi
+## 8. Kontrol listesi
 
-- [ ] İki farklı tarayıcıda (ya da biri gizli pencerede) bir ev sahibi, bir kiracı hesabı aç.
-- [ ] Ev sahibi ev ekler; açılan davet bağlantısını kiracıya gönderir.
-- [ ] Kiracı bağlantıyla kaydolur ve eve bağlanır.
-- [ ] Kiracı dekont yükler; ev sahibinin ekranında sayfa yenilenmeden görünür.
-- [ ] Ev sahibi onaylar; kiracıya bildirim düşer.
+- [ ] İki farklı tarayıcıda (ya da biri gizli pencerede) bir mülk sahibi, bir kiracı hesabı aç.
+- [ ] Mülk sahibi mülk ekler; açılan davet bağlantısını kiracıya gönderir.
+- [ ] Kiracı bağlantıyla kaydolur ve mülke bağlanır.
+- [ ] Kiracı dekont yükler; mülk sahibinin ekranında sayfa yenilenmeden görünür.
+- [ ] Mülk sahibi onaylar; kiracıya bildirim düşer.
 - [ ] Telefondan ana ekrana ekle, uygulamayı kapatıp mesaj gönder: bildirim gelmeli.
 
 ---

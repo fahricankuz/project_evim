@@ -322,3 +322,14 @@ test('kullanıcı abonelik satırını kendisi yazamaz, başkasınınkini görem
   await expect(db.query(`update public.subscriptions set expires_at = now() + interval '10 years' where user_id = $1`, [X])).rejects.toThrow();
   expect((await q(`select count(*)::int c from public.subscriptions`))[0].c).toBe(1);
 });
+
+test('cihaz anahtarları: kullanıcı yalnızca kendi cihazını yazar ve görür', async () => {
+  await as(T1);
+  await db.query(`insert into public.device_tokens (token, user_id, platform) values ('tok-ios', $1, 'ios')`, [T1]);
+  await expect(db.query(`insert into public.device_tokens (token, user_id, platform) values ('tok-x', $1, 'android')`, [L])).rejects.toThrow();
+  await expect(db.query(`insert into public.device_tokens (token, user_id, platform) values ('tok-w', $1, 'windows')`, [T1])).rejects.toThrow();
+  await as(L);
+  expect(await q(`select * from public.device_tokens`)).toEqual([]);
+  await as(T1);
+  expect((await q(`select platform from public.device_tokens`))).toEqual([{ platform:'ios' }]);
+});

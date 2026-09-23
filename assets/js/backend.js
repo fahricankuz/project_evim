@@ -11,6 +11,7 @@ import { S, ui, VERSION, useStorageKey, replaceState, saveLocal, hooks } from '.
 import { buildProperty, diffProperty, pendingMedia, storedPaths, storedPath, isStored, SB } from './mapping.js';
 import { notify } from './notify.js';
 import { shrink, uid } from './util.js';
+import { isNative, nativePlatform, secureStorage, nativePushState, nativePushRegister, nativePushUnregister } from './native.js';
 
 export const live = {
   client: null,
@@ -58,7 +59,12 @@ export async function init(){
   const mod = await import(CONFIG.supabaseJs);
   live.client = mod.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey, {
     // Oturum cihazda saklanır ve kendiliğinden yenilenir: bir kez giriş yeter.
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' }
+    // Telefonda oturum Keychain / Keystore'da durur; e-posta dönüşü uygulamayı
+    // açan bağlantıyla gelir (exchangeCode).
+    auth: Object.assign(
+      { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !isNative, flowType: 'pkce' },
+      isNative ? { storage: secureStorage() } : {}
+    )
   });
 
   live.client.auth.onAuthStateChange((event, session) => {
@@ -93,7 +99,21 @@ function setStatus(s){
 
 /* ---- kimlik doğrulama ---- */
 
-const redirect = () => location.origin + location.pathname;
+/**
+ * E-posta bağlantılarının döneceği adres. Telefonda: yayın adresi (Universal /
+ * App Link) ya da evim:// şeması; web'de sayfanın kendisi.
+ */
+export function redirect(){
+  if (isNative) return CONFIG.publicUrl ? CONFIG.publicUrl.replace(/\/?$/, '/') + 'auth' : 'evim://auth';
+  return location.origin + location.pathname;
+}
+
+/** Uygulamayı açan e-posta bağlantısındaki PKCE kodunu oturuma çevirir. */
+export async function exchangeCode(code){
+  const res = await sb().auth.exchangeCodeForSession(code);
+  if (res.error) throw res.error;
+  return res.data;
+}
 
 export async function signUp({ name, email, password, role }){
   const res = await sb().auth.signUp({
@@ -586,7 +606,10 @@ export async function acceptInvite(code){
   return pid;
 }
 
+/** Davet bağlantısı. Yayın adresi tanımlıysa yol biçiminde: telefonda uygulamayı açar. */
 export function inviteLink(code){
+  if (CONFIG.publicUrl) return CONFIG.publicUrl.replace(/\/?$/, '/') + 'katil/' + encodeURIComponent(code);
+  if (isNative) return 'evim://katil/' + encodeURIComponent(code);
   return location.origin + location.pathname + '#/katil/' + encodeURIComponent(code);
 }
 
@@ -601,7 +624,15 @@ function b64ToBytes(b64){
 }
 
 /** 'unsupported' | 'install' (iOS'ta önce ana ekrana eklenmeli) | 'denied' | 'on' | 'off' */
+/* Telefonda (Capacitor) anlık bildirim: cihaz anahtarı device_tokens tablosuna yazılır. */
+const TOKEN_KEY = 'evim-cihaz-anahtari';
+const savedToken = () => { try { return localStorage.getItem(TOKEN_KEY); } catch(e){ return null; } };
+
+export let onPushTap = () => {};
+export function setPushTap(fn){ onPushTap = fn; }
+
 export async function pushState(){
+  if (isNative) return nativePushState(!!savedToken());
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   if (!('Notification' in window) || !('serviceWorker' in navigator)) return ios && !standalone ? 'install' : 'unsupported';
@@ -613,6 +644,13 @@ export async function pushState(){
 }
 
 export async function enablePush(){
+  if (isNative){
+    const token = await nativePushRegister(url => onPushTap(url));
+    if (!token) return false;
+    if (LIVE && me()) must(await sb().from('device_tokens').upsert({ token, user_id: me(), platform: nativePlatform }, { onConflict:'token' }));
+    try { localStorage.setItem(TOKEN_KEY, token); } catch(e){}
+    return true;
+  }
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') return false;
   const reg = await navigator.serviceWorker.ready;
@@ -629,6 +667,14 @@ export async function enablePush(){
 }
 
 export async function disablePush(quiet){
+  if (isNative){
+    const token = savedToken();
+    if (token && LIVE && me()) await sb().from('device_tokens').delete().eq('token', token);
+    try { localStorage.removeItem(TOKEN_KEY); } catch(e){}
+    await nativePushUnregister();
+    if (!quiet) onData();
+    return;
+  }
   const reg = await navigator.serviceWorker?.getRegistration();
   const sub = await reg?.pushManager?.getSubscription();
   if (!sub) return;

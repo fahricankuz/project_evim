@@ -14,14 +14,12 @@ import { t } from './i18n.js';
 import { CONFIG, LIVE } from './config.js';
 import { ui } from './state.js';
 import { live, syncBilling, refreshAccess } from './backend.js';
+import { N, isNative, nativePlatform } from './native.js';
 
 const DAY = 86400000;
 
 /** Çalışılan ortam: 'ios' | 'android' | 'web'. */
-export function platform(){
-  const C = globalThis.Capacitor;
-  return C && typeof C.isNativePlatform === 'function' && C.isNativePlatform() ? C.getPlatform() : 'web';
-}
+export function platform(){ return nativePlatform; }
 
 /** Planın görünen adı ve dönemi. */
 export const PLAN_LABEL = {
@@ -63,18 +61,24 @@ export function canWrite(){
 
 /* ---- mağaza ---- */
 
-let rc = null;
+let rcUser = null;
 
-/** RevenueCat eklentisi (yalnızca iOS/Android). Paketleyici gerektirmez:
-    Capacitor'ın yerel köprüsü eklentiyi adıyla kaydeder. */
+/** RevenueCat eklentisi (yalnızca iOS/Android), oturumdaki kullanıcıyla. */
 async function purchases(){
-  if (rc) return rc;
-  const C = globalThis.Capacitor;
-  const apiKey = platform() === 'ios' ? CONFIG.billing.revenuecatIosKey : CONFIG.billing.revenuecatAndroidKey;
-  if (!apiKey) throw new Error(t('Mağaza anahtarı tanımlı değil (config.js → billing).'));
-  const P = C.registerPlugin('Purchases');
-  await P.configure({ apiKey, appUserID: live.user.id });
-  rc = P;
+  if (!isNative || !N.Purchases) throw new Error(t('Mağaza bu cihazda kullanılamıyor.'));
+  const P = N.Purchases;
+  const uid = live.user.id;
+  if (rcUser === uid) return P;
+  const { isConfigured } = await P.isConfigured();
+  if (!isConfigured){
+    const apiKey = platform() === 'ios' ? CONFIG.billing.revenuecatIosKey : CONFIG.billing.revenuecatAndroidKey;
+    if (!apiKey) throw new Error(t('Mağaza anahtarı tanımlı değil (config.js → billing).'));
+    await P.configure({ apiKey, appUserID: uid });
+  } else {
+    // Aynı cihazda başka hesapla giriş yapıldı.
+    await P.logIn({ appUserID: uid });
+  }
+  rcUser = uid;
   return P;
 }
 

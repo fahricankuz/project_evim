@@ -2,6 +2,7 @@
 
 import { t } from './i18n.js';
 import { notify } from './notify.js';
+import { isNative } from './native.js';
 
 export const pwa = {
   installable: false,     // tarayıcı kurulum penceresi sunabiliyor mu
@@ -14,7 +15,7 @@ export const pwa = {
 let deferredPrompt = null;
 
 export function initPwa(){
-  pwa.installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  pwa.installed = isNative || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 
   addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
@@ -33,7 +34,8 @@ export function initPwa(){
   addEventListener('offline', () => notify({ title:t('Çevrimdışısın'), body:t('Uygulama çalışmaya devam eder; değişiklikler bu cihazda saklanır.'), icon:'bell' }, false));
   addEventListener('online', () => notify({ title:t('Yeniden bağlandın'), body:t('Bağlantı geri geldi.'), icon:'bell' }, false));
 
-  registerWorker();
+  // Mağaza uygulamasında dosyalar zaten cihazda: service worker ve kurulum önerisi yok.
+  if (!isNative) registerWorker();
 }
 
 async function registerWorker(){

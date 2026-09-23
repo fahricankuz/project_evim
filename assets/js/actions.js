@@ -15,6 +15,7 @@ import { migrate } from './migrate.js';
 import { t, locale, setLang, getLang } from './i18n.js';
 import { install } from './pwa.js';
 import * as billing from './billing.js';
+import { setLock } from './native.js';
 import { LIVE } from './config.js';
 import * as backend from './backend.js';
 import { AUTH_ACTIONS, AUTH_FORMS, authSubmit } from './auth.js';
@@ -971,6 +972,29 @@ export async function onChangeField(ev){
     // Formu yeniden çizmeden seçimi göster (yazılanlar kaybolmasın).
     ui.signupRole = ev.target.value;
     document.querySelectorAll('.rolecard').forEach(c => c.classList.toggle('on', c.querySelector('input').checked));
+    return;
+  }
+
+  if (n === 'cameraPick'){
+    // Kameradan gelen fotoğrafı formun asıl dosya alanına ekle (zorunlu alan dolmuş olur).
+    const shot = ev.target.files && ev.target.files[0];
+    const main = ev.target.closest('form')?.elements[d.target];
+    if (!shot || !main) return;
+    const dt = new DataTransfer();
+    if (main.multiple) [...main.files].forEach(f => dt.items.add(f));
+    dt.items.add(shot);
+    main.files = dt.files;
+    announce(t('Fotoğraf eklendi: {name}', { name: shot.name }));
+    return;
+  }
+
+  if (n === 'appLock'){
+    const want = ev.target.checked;
+    const ok = await setLock(want);
+    if (!ok){
+      ev.target.checked = !want;
+      notify({ title:t('Kilit açılamadı'), body:t('Cihazda Face ID, parmak izi ya da ekran kilidi tanımlı olmalı.'), icon:'key' }, false);
+    }
     return;
   }
 

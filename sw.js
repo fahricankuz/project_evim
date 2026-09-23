@@ -27,6 +27,7 @@ const SHELL = [
   './assets/js/main.js',
   './assets/js/mapping.js',
   './assets/js/migrate.js',
+  './assets/js/native.js',
   './assets/js/notify.js',
   './assets/js/pwa.js',
   './assets/js/render.js',

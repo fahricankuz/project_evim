@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Evim</string>
+    <string name="title_activity_main">Evim</string>
+    <string name="package_name">app.evim</string>
+    <string name="custom_url_scheme">app.evim</string>
+</resources>

@@ -1,8 +1,10 @@
 // Evim — anlık bildirim gönderici (Supabase Edge Function, Deno).
 //
 // notifications tablosuna eklenen her satır için Database Webhook bu
-// fonksiyonu çağırır; fonksiyon kullanıcının kayıtlı cihazlarına Web Push
-// gönderir. İsteğe bağlı olarak (kullanıcı ayarlarda açtıysa) e-posta da yollar.
+// fonksiyonu çağırır; fonksiyon kullanıcının kayıtlı cihazlarına bildirim
+// gönderir: tarayıcılara Web Push, telefon uygulamasına APNs (iOS) ve FCM
+// (Android; ayrıntı native.ts). İsteğe bağlı olarak (kullanıcı ayarlarda
+// açtıysa) e-posta da yollar.
 //
 // Gerekli gizli değişkenler (supabase secrets set ...):
 //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (ör. mailto:siz@ornek.com)
@@ -14,6 +16,7 @@
 
 import webpush from 'npm:web-push@3.6.7';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { sendApns, sendFcm } from './native.ts';
 
 type NotificationRow = {
   id: number; user_id: string; title: string; body: string; url: string; tag: string | null;
@@ -21,7 +24,7 @@ type NotificationRow = {
 
 const env = (k: string) => Deno.env.get(k) ?? '';
 
-webpush.setVapidDetails(env('VAPID_SUBJECT') || 'mailto:admin@example.com', env('VAPID_PUBLIC_KEY'), env('VAPID_PRIVATE_KEY'));
+if (env('VAPID_PUBLIC_KEY')) webpush.setVapidDetails(env('VAPID_SUBJECT') || 'mailto:admin@example.com', env('VAPID_PUBLIC_KEY'), env('VAPID_PRIVATE_KEY'));
 
 const admin = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
   auth: { persistSession: false }
@@ -66,7 +69,20 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 2. E-posta (kullanıcı açtıysa ve Resend yapılandırıldıysa)
+  // 2. Telefon uygulaması (APNs / FCM)
+  const { data: devices } = await admin.from('device_tokens').select('token, platform').eq('user_id', n.user_id);
+  for (const d of devices ?? []) {
+    try {
+      const note = { title: n.title, body: n.body, url: n.url, tag: n.tag };
+      const r = d.platform === 'ios' ? await sendApns(d.token, note) : await sendFcm(d.token, note);
+      if (r === 'ok') sent++;
+      if (r === 'gone') await admin.from('device_tokens').delete().eq('token', d.token);
+    } catch (e) {
+      console.error('cihaz bildirimi hatası', d.platform, (e as Error).message);
+    }
+  }
+
+  // 3. E-posta (kullanıcı açtıysa ve Resend yapılandırıldıysa)
   let mailed = false;
   if (env('RESEND_API_KEY') && env('EMAIL_FROM')) {
     const { data: profile } = await admin.from('profiles').select('settings').eq('id', n.user_id).single();

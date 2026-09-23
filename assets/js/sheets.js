@@ -12,10 +12,19 @@ import { esc, opts, tl, fmt, fmtFull, monthYear, parse, iso, t0, daysTo, tm, ago
 import { screenMap } from './router.js';
 import { LIVE, CONFIG } from './config.js';
 import { access, trialDaysLeft, planPrices, manageUrl, platform, PLAN_LABEL } from './billing.js';
-import { live, mediaSrc, inviteLink, markInboxRead } from './backend.js';
+import { isNative, lockEnabled, nativePlatform } from './native.js';
+import { live, mediaSrc, inviteLink, markInboxRead, pushState } from './backend.js';
 import { isStored, storedPath } from './mapping.js';
 
 function reqOf(p, id){ return p.requests.find(r => r.id === id); }
+
+/** Telefonda doğrudan kamerayı açan düğme; çekilen fotoğraf formdaki dosya alanına eklenir. */
+function cameraBtn(target){
+  const touch = isNative || matchMedia('(pointer: coarse)').matches;
+  if (!touch) return '';
+  return '<label class="btn small ghost" style="cursor:pointer;align-self:flex-start">'+ic('cam', 16)+' '+t('Kamerayla çek') +
+    '<input type="file" accept="image/*" capture="environment" class="sr" data-input="cameraPick" data-target="'+target+'"></label>';
+}
 
 /** Açık sheet'in gövdesi; null dönerse katman boş kalır. */
 export function sheetBody(route){
@@ -120,6 +129,12 @@ function settingsSheet(){
         '</div>') +
 
     (installBlock() ? ('<h2 style="margin:18px 0 8px">'+t('Uygulama')+'</h2>') + installBlock() : '') +
+    (isNative
+      ? ('<h2 style="margin:18px 0 8px">'+t('Güvenlik')+'</h2>') +
+        '<label class="toggle">'+(nativePlatform === 'ios' ? t('Face ID / Touch ID ile kilitle') : t('Parmak izi ya da ekran kilidiyle kilitle')) +
+          '<input type="checkbox" data-input="appLock"'+(lockEnabled() ? ' checked' : '')+'></label>' +
+        '<div class="muted" style="font-size:12.5px">'+t('Açıldığında ve bir dakikadan uzun arka planda kaldığında kimlik doğrulaması istenir.')+'</div>'
+      : '') +
     ('<h2 style="margin:18px 0 8px">'+t('Veri')+'</h2><div class="stack" style="gap:8px">') +
       (LIVE ? '' : '<button class="btn small ghost" data-act="startTour">'+ic('flag', 15)+(' '+t('Rehberli tur')+'</button>')) +
       '<button class="btn small ghost" data-act="sheet" data-s="harita">'+ic('map', 15)+(' '+t('Ekran haritası')+'</button>') +
@@ -140,7 +155,7 @@ function newReqSheet(p){
       '<button type="button" class="chip" data-act="suggestTitle" data-v="'+esc(t(x))+'">'+esc(t(x))+'</button>').join('')+'</div>' +
     ('<label class="field">'+t('Açıklama')+'<textarea name="desc" maxlength="600" placeholder="'+t('Ne zamandır sürüyor, nerede, nasıl?')+'"></textarea></label>') +
     ('<label class="field">'+t('Aciliyet')+'<select name="urgency">')+opts(['Normal','Acil'], 'Normal')+'</select></label>' +
-    ('<label class="field">'+t('Fotoğraf')+'<input type="file" name="files" accept="image/*" multiple style="padding-top:10px"></label>') +
+    ('<label class="field">'+t('Fotoğraf')+'<input type="file" name="files" accept="image/*" multiple style="padding-top:10px"></label>') + cameraBtn('files') +
     ('<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">'+t('Vazgeç')+'</button>') +
     ('<button class="btn primary" style="flex:1">'+t('Talebi gönder')+'</button></div></form>');
 }
@@ -239,7 +254,7 @@ function payFormSheet(p, key){
     (paid ? ('<div class="kv"><span>'+t('Şimdiye kadar ödenen')+'</span><span>')+tl(paid)+'</span></div>' : '') +
     ('<label class="field">'+t('Ödenen tutar (₺)')+'<input name="amount" type="number" min="0" step="1" required value="')+suggest+'" inputmode="numeric"></label>' +
     ('<label class="field">'+t('Ödeme tarihi')+'<input name="date" type="date" required value="')+iso(t0())+'" max="'+iso(t0())+'"></label>' +
-    ('<label class="field">'+t('Dekont (görsel ya da PDF)')+'<input type="file" name="file" accept="image/*,application/pdf" required style="padding-top:10px"></label>') +
+    ('<label class="field">'+t('Dekont (görsel ya da PDF)')+'<input type="file" name="file" accept="image/*,application/pdf" required style="padding-top:10px"></label>') + cameraBtn('file') +
     ('<label class="field">'+t('Not (isteğe bağlı)')+'<input name="note" maxlength="120" placeholder="'+t('Ör. havale açıklaması')+'"></label>') +
     ('<div class="muted">'+t('Tutar kiranın altındaysa ödeme kısmi olarak işaretlenir ve kalan bakiye takip edilir.')+'</div>') +
     ('<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">'+t('Vazgeç')+'</button>') +
@@ -468,8 +483,16 @@ function receiptPreview(rc){
 
 /* ---------------- hesap ---------------- */
 
+let pushLoading = false;
+
 function accountSheet(){
   const prof = live.profile || {};
+  // Doğrudan bağlantıyla açıldıysa bildirim durumu henüz okunmamış olabilir.
+  if (!ui.pushState && !pushLoading){
+    pushLoading = true;
+    pushState().then(st => { ui.pushState = st; }).catch(() => { ui.pushState = 'unsupported'; })
+      .finally(() => { pushLoading = false; import('./render.js').then(m => { if (current().sheet === 'hesap') m.refreshLayer(); }); });
+  }
   const push = ui.pushState || 'unknown';
   const pushText = {
     on:t('Açık — kira günü, dekont, talep ve mesajlar telefonuna gelir.'),

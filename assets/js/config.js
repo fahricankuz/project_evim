@@ -20,6 +20,9 @@ export const CONFIG = Object.assign({
   supabaseUrl: '',
   supabaseAnonKey: '',
   vapidPublicKey: '',
+  // Uygulamanın yayın adresi (ör. https://evim.app/). Davet ve e-posta bağlantıları
+  // bu adresle üretilir; telefonda uygulamayı doğrudan açar (docs/mobil.md).
+  publicUrl: '',
   billing: {
     revenuecatIosKey: '',       // RevenueCat → Apps → App Store uygulaması → Public API key (appl_…)
     revenuecatAndroidKey: '',   // RevenueCat → Apps → Play Store uygulaması → Public API key (goog_…)

@@ -939,3 +939,20 @@ begin
     alter publication supabase_realtime add table public.subscriptions;
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------
+-- Telefon uygulaması bildirimleri: cihaz anahtarları (iOS APNs, Android FCM).
+-- Kullanıcı yalnızca kendi cihazlarını görür ve yazar; push fonksiyonu okur.
+-- ---------------------------------------------------------------------
+create table if not exists public.device_tokens (
+  token       text primary key,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  platform    text not null check (platform in ('ios','android')),
+  created_at  timestamptz not null default now()
+);
+create index if not exists device_tokens_user on public.device_tokens (user_id);
+alter table public.device_tokens enable row level security;
+drop policy if exists device_own on public.device_tokens;
+create policy device_own on public.device_tokens for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update, delete on public.device_tokens to authenticated;

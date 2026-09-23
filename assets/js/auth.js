@@ -53,6 +53,10 @@ export function guard(route){
 }
 
 /** backend'den gelen oturum olayları. */
+/** Şifre sıfırlama bağlantısıyla gelindi: oturum açılınca yeni şifre ekranına git. */
+let recoveryPending = false;
+export function markRecovery(){ recoveryPending = true; }
+
 export async function onAuthEvent(evt){
   if (evt === 'signed-in' || evt === 'signed-out') ui.signupRole = null;
   if (evt === 'signed-in'){
@@ -60,7 +64,8 @@ export async function onAuthEvent(evt){
     catch(e){ notify({ title:t('Veriler yüklenemedi'), body: backend.humanError(e), icon:'bell' }, false); }
     ui.meTenant = backend.live.user?.id;
     await acceptPendingInvite();
-    go(home(), { replace:true });
+    go(recoveryPending ? '/yeni-sifre' : home(), { replace:true });
+    recoveryPending = false;
   } else if (evt === 'signed-out'){
     go('/giris', { replace:true });
   } else if (evt === 'recovery'){
@@ -92,7 +97,8 @@ export async function handleJoinRoute(route){
       return;
     }
     await acceptPendingInvite();
-    go(home(), { replace:true });
+    go(recoveryPending ? '/yeni-sifre' : home(), { replace:true });
+    recoveryPending = false;
   }
 }
 

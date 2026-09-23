@@ -1,7 +1,7 @@
 /* Uygulamayı ayağa kaldırır: rota, olay dinleyicileri, klavye ve açılış bildirimleri. */
 
 import { t } from './i18n.js';
-import { S, ui, save, applyTheme, bootInfo } from './state.js';
+import { S, ui, save, applyTheme, bootInfo, themeHook } from './state.js';
 import { start, onChange, go, closeSheet, current, back } from './router.js';
 import { render } from './render.js';
 import { A, onSubmit, onInput, onChangeField, blockedAct } from './actions.js';
@@ -14,9 +14,10 @@ import { isActive as tourActive } from './tour.js';
 import { initPwa, pwa } from './pwa.js';
 import { LIVE } from './config.js';
 import * as backend from './backend.js';
-import { guard as authGuard, onAuthEvent, handleJoinRoute, setRerender } from './auth.js';
+import { guard as authGuard, onAuthEvent, handleJoinRoute, setRerender, markRecovery } from './auth.js';
 import { guard, recheck } from './router.js';
 import { softRender } from './render.js';
+import { initNative, isNative, parseOpenUrl, hideSplash, listenTaps, applyStatusBar } from './native.js';
 
 applyTheme();
 
@@ -105,6 +106,42 @@ onChange(route => {
 pwa.onChange = () => render();
 initPwa();
 
+/* ---- iOS / Android ---- */
+
+/** Uygulamayı açan bağlantı: e-posta dönüşü (PKCE kodu) ya da uygulama içi adres. */
+async function openAppUrl(url){
+  const { code, route } = parseOpenUrl(url);
+  if (code && LIVE){
+    try {
+      // Kod değişimi "oturum açıldı" olayını da tetikler; şifre sıfırlamada yeni şifre ekranı kazanmalı.
+      const d = await backend.exchangeCode(code);
+      if (d && d.redirectType === 'recovery'){ markRecovery(); onAuthEvent('recovery'); }
+    } catch(e){
+      notify({ title:t('Bağlantı açılamadı'), body: backend.humanError(e), icon:'bell' }, false);
+    }
+  }
+  if (route) go(route);
+}
+
+const ROOTS = ['/kiraci', '/mulk-sahibi', '/giris'];
+initNative({
+  theme: () => S.theme,
+  onUrl: openAppUrl,
+  // Android geri tuşu: önce açık pencere, sonra alt sayfa, sonra geçmiş; kökte uygulamayı küçült.
+  onBack: () => {
+    if (handleConfirmKey({ key:'Escape', preventDefault(){} })) return true;
+    if (current().sheet){ closeSheet(); return true; }
+    if (tourActive()){ A.tourEnd(); return true; }
+    if (ROOTS.includes(current().path)) return false;
+    back();
+    return true;
+  }
+});
+themeHook.fn = applyStatusBar;
+const goNote = url => go(String(url).replace(/^.*#/, '') || '/');
+backend.setPushTap(goNote);
+if (isNative) listenTaps(goNote);
+
 if (LIVE){
   guard.fn = authGuard;
   setRerender(() => render());
@@ -134,6 +171,7 @@ if (LIVE){
 } else {
   start();
 }
+hideSplash();
 
 if (bootInfo.migratedFrom){
   setTimeout(() => notify({ title:t('Verin güncellendi'), body:t('Kayıtlı verin yeni sürüme taşındı; eski hali yedek olarak saklandı.'), icon:'doc' }, false), 400);

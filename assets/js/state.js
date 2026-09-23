@@ -415,4 +415,6 @@ export function applyTheme(){
   else el.setAttribute('data-theme', S.theme);
 }
 
-export function setTheme(v){ S.theme = v; save(); applyTheme(); }
+export function setTheme(v){ S.theme = v; save(); applyTheme(); themeHook.fn(); }
+/** Tema değişince (ör. telefonda durum çubuğu rengi). */
+export const themeHook = { fn: () => {} };
