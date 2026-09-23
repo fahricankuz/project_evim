@@ -295,3 +295,18 @@ details.card summary::-webkit-details-marker{display:none}
 .hidden{display:none!important}
 .typeic{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--surface2);color:var(--accent)}
 button.chip{border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:800}
+
+/* abonelik */
+.subbar{display:flex;align-items:center;gap:12px;padding:10px 12px;margin-bottom:14px;border-radius:14px;background:var(--surface2);color:var(--ink)}
+.subbar > svg{flex:none;color:var(--accent)}
+.subbar > div{flex:1;min-width:0;font-size:14px}
+.subbar .btn{flex:none}
+.subbar.lock{background:var(--bad-bg)}
+.subbar.lock > svg{color:var(--bad-ink)}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.plan{display:flex;flex-direction:column;gap:4px;text-align:left;padding:14px;border-radius:14px;border:2px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;font:inherit}
+.plan[aria-pressed="true"]{border-color:var(--accent)}
+.plan b{font-size:15px}
+.plan .price{font-size:19px;font-weight:800}
+.fine{font-size:12px;color:var(--muted);line-height:1.5}
+.fine a{color:inherit}

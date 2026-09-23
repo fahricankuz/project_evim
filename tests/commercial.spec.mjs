@@ -141,3 +141,36 @@ test('v3 verisi taşınır: tip konut olur, "Ev sahibi" değerleri yenilenir', a
   expect(s.props.x.bills[0].who).toBe('Mülk sahibi');
   expect(await page.evaluate(() => localStorage.getItem('evim-yedek-v3'))).toBeTruthy();
 });
+
+/* ---- abonelik (demo) ---- */
+
+test('demo: deneme şeridi, abonelik sayfası ve süre bitince kilit', async ({ page }) => {
+  await open(page, '#/mulk-sahibi');
+  await expect(screen(page).locator('.subbar')).toContainText('Deneme sürümü');
+  await page.click('.subbar button:has-text("Abone ol")');
+  await expect(sheet(page).locator('h3')).toHaveText('Mülk sahibi aboneliği');
+  await expect(sheet(page)).toContainText('Kiracıların için her zaman ücretsiz');
+
+  // Süre bitti: kayıt değiştiren işlem abonelik sayfasını açar, veri değişmez.
+  await sheet(page).locator('button[data-act=demoBilling][data-v=expired]').click();
+  await page.goto('index.html#/mulk-sahibi/mulk/cihangir/odeme');
+  await expect(screen(page).locator('.subbar.lock')).toContainText('Deneme süren bitti');
+  await screen(page).locator('button[data-act=approvePay]').first().click();
+  await expect(sheet(page).locator('h3')).toHaveText('Mülk sahibi aboneliği');
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem('evim')).props.cihangir.pay);
+  expect(Object.values(st).some(r => r.status === 'review')).toBe(true);
+
+  // Kiracı görünümü etkilenmez.
+  await page.goto('index.html#/kiraci');
+  await expect(page.locator('.subbar')).toHaveCount(0);
+
+  // Abone ol → kilit kalkar.
+  await page.goto('index.html#/mulk-sahibi?s=abonelik');
+  await sheet(page).locator('button[data-act=billingPlan][data-v=monthly]').click();
+  await expect(sheet(page).locator('button[data-act=billingPlan][data-v=monthly]')).toHaveAttribute('aria-pressed', 'true');
+  await sheet(page).locator('button[data-act=subscribe]').click();
+  await expect(page.locator('#banners')).toContainText('Aboneliğin başladı');
+  await expect(page.locator('.subbar')).toHaveCount(0);
+  await page.goto('index.html#/mulk-sahibi?s=ayarlar');
+  await expect(sheet(page).locator('button[data-s=abonelik]')).toHaveText('Aktif');
+});

@@ -5,6 +5,7 @@ import { t } from './i18n.js';
 import { S, ui, STEPS, CONDITIONS, PROP_TYPES, isCommercial, docCatsFor } from './state.js';
 import { estimate, stopajRate } from './tax.js';
 import { pwa } from './pwa.js';
+import { access, trialDaysLeft } from './billing.js';
 import { LIVE } from './config.js';
 import { live, mediaSrc } from './backend.js';
 import { LANGS, getLang } from './i18n.js';
@@ -841,12 +842,35 @@ function agendaScreen(){
 }
 
 export function landlordScreen(route){
-  if (route.tab === 'portfolio') return route.pid ? propDetail(route) : portfolio();
-  if (route.tab === 'lreq') return allRequests();
-  if (route.tab === 'lmsg') return threads();
-  if (route.tab === 'report') return report();
-  if (route.tab === 'agenda') return agendaScreen();
-  return portfolio();
+  const html = route.tab === 'portfolio' ? (route.pid ? propDetail(route) : portfolio())
+    : route.tab === 'lreq' ? allRequests()
+    : route.tab === 'lmsg' ? threads()
+    : route.tab === 'report' ? report()
+    : route.tab === 'agenda' ? agendaScreen()
+    : portfolio();
+  // Abonelik şeridi başlığın hemen altına: portföyde her durumda, diğer ekranlarda yalnızca kilitliyken.
+  const banner = subBanner(route.tab === 'portfolio' && !route.pid);
+  if (!banner) return html;
+  const at = html.indexOf('<div class="stack">');
+  return at < 0 ? banner + html : html.slice(0, at) + banner + html.slice(at);
+}
+
+/** Mülk sahibinin deneme / abonelik durumu. */
+function subBanner(full){
+  const a = access();
+  if (a.pending) return '';
+  const btn = label => '<button class="btn small '+(a.access ? 'ghost' : 'primary')+'" data-act="sheet" data-s="abonelik">'+label+'</button>';
+  if (!a.access)
+    return '<div class="subbar lock" role="status">'+ic('key', 18)+'<div><b>'+t('Deneme süren bitti')+'</b>' +
+      '<div class="muted">'+t('Kayıtların duruyor; okuyabilir ve mesajlaşabilirsin. Değiştirmek için abone ol.')+'</div></div>'+btn(t('Abone ol'))+'</div>';
+  if (!full) return '';
+  if (a.subscribed && a.billingIssue)
+    return '<div class="subbar lock" role="status">'+ic('card', 18)+'<div><b>'+t('Ödeme alınamadı')+'</b>' +
+      '<div class="muted">'+t('Mağazadaki ödeme yöntemini güncelle; aboneliğin kısa bir süre daha açık kalır.')+'</div></div>'+btn(t('Aç'))+'</div>';
+  if (a.inTrial)
+    return '<div class="subbar" role="status">'+ic('flag', 18)+'<div><b>'+t('Deneme sürümü')+'</b>' +
+      '<div class="muted">'+t('{n} gün kaldı', { n:trialDaysLeft(a) })+'</div></div>'+btn(t('Abone ol'))+'</div>';
+  return '';
 }
 
 /* ---------------- sekme çubuğu ve gezinme paneli ---------------- */

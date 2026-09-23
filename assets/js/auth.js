@@ -362,7 +362,8 @@ export const AUTH_ACTIONS = {
     const { ask } = await import('./confirm.js');
     if (!await ask({
       title:t('Hesabın silinsin mi?'),
-      body:t('Hesabın ve sahibi olduğun mülklerin tüm kayıtları kalıcı olarak silinir. Bu işlem geri alınamaz.'),
+      body:t('Hesabın ve sahibi olduğun mülklerin tüm kayıtları kalıcı olarak silinir. Bu işlem geri alınamaz.') +
+        (backend.live.access?.subscribed && backend.live.access?.willRenew ? ' '+t('Mağaza aboneliğin hesap silinince kendiliğinden iptal olmaz; App Store ya da Google Play’den ayrıca iptal et.') : ''),
       ok:t('Hesabı sil'), danger:true
     })) return;
     try {

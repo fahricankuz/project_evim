@@ -10,7 +10,8 @@ import { stopajLine } from './views.js';
 import { searchBody, isCurrent, installBlock, langSwitch } from './views.js';
 import { esc, opts, tl, fmt, fmtFull, monthYear, parse, iso, t0, daysTo, tm, ago } from './util.js';
 import { screenMap } from './router.js';
-import { LIVE } from './config.js';
+import { LIVE, CONFIG } from './config.js';
+import { access, trialDaysLeft, planPrices, manageUrl, platform, PLAN_LABEL } from './billing.js';
 import { live, mediaSrc, inviteLink, markInboxRead } from './backend.js';
 import { isStored, storedPath } from './mapping.js';
 
@@ -47,6 +48,7 @@ export function sheetBody(route){
     case 'iade': return refundSheet(p);
     case 'hesap': return LIVE ? accountSheet() : null;
     case 'davet-paylas': return shareInviteSheet(p, route.params.code || route.params.key);
+    case 'abonelik': return subscriptionSheet();
     default: return null;
   }
 }
@@ -105,6 +107,11 @@ function settingsSheet(){
     '</div>' +
 
     ('<h2 style="margin:18px 0 8px">'+t('Dil')+'</h2>') + langSwitch() +
+
+    (ui.role === 'landlord'
+      ? ('<h2 style="margin:18px 0 8px">'+t('Abonelik')+'</h2>') +
+        '<button class="btn small ghost block" data-act="sheet" data-s="abonelik">'+esc(subSummary())+'</button>'
+      : '') +
 
     (LIVE
       ? ('<h2 style="margin:18px 0 8px">'+t('Hesap')+'</h2><button class="btn small ghost block" data-act="sheet" data-s="hesap">'+t('Hesap ve bildirim ayarları')+'</button>')
@@ -474,7 +481,11 @@ function accountSheet(){
   }[push];
   return ('<h3>'+t('Hesap')+'</h3><div class="stack">') +
     ('<div class="card"><div class="kv"><span>'+t('E-posta')+'</span><span>')+esc(live.user?.email || '')+'</span></div>' +
-      ('<div class="kv"><span>'+t('Hesap türü')+'</span><span>')+(prof.role === 'landlord' ? t('Mülk sahibi') : t('Kiracı'))+'</span></div></div>' +
+      ('<div class="kv"><span>'+t('Hesap türü')+'</span><span>')+(prof.role === 'landlord' ? t('Mülk sahibi') : t('Kiracı'))+'</span></div>' +
+      (prof.role === 'landlord'
+        ? ('<div class="kv"><span>'+t('Abonelik')+'</span><span>')+esc(subSummary())+'</span></div>' +
+          '<button class="btn small ghost block" style="margin-top:8px" data-act="sheet" data-s="abonelik">'+t('Aboneliği görüntüle')+'</button>'
+        : '') + '</div>' +
     '<form class="stack" data-form="profile">' +
       ('<label class="field">'+t('Ad soyad')+'<input name="name" required maxlength="60" value="')+esc(prof.name || '')+'"></label>' +
       ('<label class="field">'+t('Telefon')+'<input name="phone" type="tel" value="')+esc(prof.phone || '')+'"></label>' +
@@ -496,6 +507,82 @@ function accountSheet(){
     ('<button class="btn ghost block" data-act="signOut">'+t('Çıkış yap')+'</button>') +
     ('<button class="btn small danger block" data-act="deleteAccount">'+t('Hesabı sil')+'</button>') +
     ('<p class="foot">'+t('Oturumun bu cihazda açık kalır; çıkış yapana kadar tekrar giriş gerekmez.')+'</p></div>');
+}
+
+/* ---------------- abonelik ---------------- */
+
+/** Tek satırlık durum: ayarlarda ve hesap sayfasında. */
+function subSummary(){
+  const a = access();
+  if (a.pending) return t('Kontrol ediliyor…');
+  if (a.subscribed) return t('Aktif');
+  if (a.inTrial) return t('Deneme · {n} gün kaldı', { n:trialDaysLeft(a) });
+  return t('Deneme süresi bitti');
+}
+
+let pricesLoading = false;
+
+function subscriptionSheet(){
+  const a = access();
+  // Fiyatlar bir kez, arka planda okunur (mobilde mağazadan).
+  if (!ui.billingPrices && !pricesLoading){
+    pricesLoading = true;
+    planPrices().then(p => { ui.billingPrices = p; pricesLoading = false; refreshLayerSoon(); });
+  }
+  const prices = ui.billingPrices || {};
+  const selected = ui.billingPlan || 'annual';
+  const fmtDate = d => d ? fmtFull(new Date(d)) : '';
+  const storeName = { app_store:'App Store', play_store:'Google Play', stripe:t('Web'), rc_billing:t('Web'), promotional:t('Hediye'), demo:t('Demo') }[a.store] || '';
+
+  let status;
+  if (a.subscribed){
+    status = '<div class="card stack" style="gap:6px"><div class="row" style="justify-content:space-between"><b>'+t('Aboneliğin aktif')+'</b><span class="chip ok">'+t('Aktif')+'</span></div>' +
+      (a.expiresAt ? '<div class="muted">'+(a.willRenew ? t('{date} tarihinde yenilenir', { date:fmtDate(a.expiresAt) }) : t('{date} tarihinde sona erer', { date:fmtDate(a.expiresAt) }))+'</div>' : '') +
+      (storeName ? '<div class="muted">'+t('Satın alındığı yer: {store}', { store:storeName })+'</div>' : '') +
+      (a.billingIssue ? '<div class="note warn">'+t('Mağazadaki ödeme yöntemini güncelle; aboneliğin kısa bir süre daha açık kalır.')+'</div>' : '') +
+      (manageUrl(a) ? '<a class="btn small ghost" href="'+esc(manageUrl(a))+'" target="_blank" rel="noopener">'+t('Aboneliği yönet')+'</a>' : '') +
+      '</div>';
+  } else if (a.inTrial){
+    status = '<div class="note">'+t('Deneme sürümündesin: {n} gün kaldı. Deneme bitince kayıtların silinmez; abone olana kadar salt okunur olur.', { n:trialDaysLeft(a) })+'</div>';
+  } else {
+    status = '<div class="note warn">'+t('Deneme süren bitti. Kayıtların duruyor; okuyabilir ve mesajlaşabilirsin. Değiştirmek için abone ol.')+'</div>';
+  }
+
+  const plans = a.subscribed ? '' :
+    '<div class="plans" role="group" aria-label="'+t('Plan')+'">' + CONFIG.billing.plans.map(pl =>
+      '<button type="button" class="plan" data-act="billingPlan" data-v="'+esc(pl.id)+'" aria-pressed="'+(pl.id === selected)+'">' +
+        '<b>'+(PLAN_LABEL[pl.id] ? PLAN_LABEL[pl.id]() : esc(pl.id))+'</b>' +
+        '<span class="price">'+(prices[pl.id] ? esc(prices[pl.id]) : '—')+'</span>' +
+        '<span class="muted" style="font-size:12.5px">'+(pl.id === 'annual' ? t('yıllık ödenir') : t('aylık ödenir'))+'</span></button>').join('') + '</div>' +
+    (Object.values(prices).some(Boolean) ? '' : '<div class="muted" style="font-size:12.5px">'+t('Fiyatlar mağaza hesapları bağlanınca burada görünür.')+'</div>') +
+    '<button class="btn primary block" data-act="subscribe" data-v="'+esc(selected)+'">'+t('Abone ol')+'</button>';
+
+  const store = platform() === 'ios' ? 'App Store' : platform() === 'android' ? 'Google Play' : '';
+  const legal = '<p class="fine">' +
+    (store ? t('Ödeme, onayladığında {store} hesabından alınır.', { store })+' ' : '') +
+    t('Abonelik, dönem bitmeden en az 24 saat önce iptal edilmezse aynı süre ve fiyatla kendiliğinden yenilenir. İptal ve yönetim, satın aldığın mağazanın hesap ayarlarından yapılır.') +
+    (CONFIG.billing.termsUrl ? ' <a href="'+esc(CONFIG.billing.termsUrl)+'" target="_blank" rel="noopener">'+t('Kullanım koşulları')+'</a>' : '') +
+    (CONFIG.billing.privacyUrl ? ' · <a href="'+esc(CONFIG.billing.privacyUrl)+'" target="_blank" rel="noopener">'+t('Gizlilik politikası')+'</a>' : '') + '</p>';
+
+  const demo = LIVE ? '' :
+    '<section class="card stack" style="gap:8px"><div class="label">'+t('Demo: durumu dene')+'</div><div class="row" style="flex-wrap:wrap;gap:6px">' +
+      [['trial', t('Deneme')], ['expired', t('Süresi bitti')], ['subscribed', t('Abone')]].map(([v, label]) =>
+        '<button class="btn small ghost" data-act="demoBilling" data-v="'+v+'">'+label+'</button>').join('') + '</div></section>';
+
+  return '<h3>'+t('Mülk sahibi aboneliği')+'</h3><div class="stack">' + status +
+    '<ul class="bullets">' +
+      '<li>'+t('Sınırsız mülk: konut, ofis, mağaza, depo')+'</li>' +
+      '<li>'+t('Dekont onayı, talepler, tutanak ve depozito iadesi')+'</li>' +
+      '<li>'+t('Gider defteri, net getiri ve vergi tahmini')+'</li>' +
+      '<li>'+t('Kiracıların için her zaman ücretsiz')+'</li>' +
+    '</ul>' +
+    plans +
+    '<button class="btn ghost block" data-act="restorePurchases">'+t('Satın alımları geri yükle')+'</button>' +
+    legal + demo + '</div>';
+}
+
+function refreshLayerSoon(){
+  import('./render.js').then(m => { if (current().sheet === 'abonelik') m.refreshLayer(); });
 }
 
 /* ---------------- davet paylaşımı ---------------- */

@@ -64,7 +64,7 @@ test.describe('İngilizce mod', () => {
     '#/mulk-sahibi/mulk/moda/cikis?s=cikis-baslat&pid=moda', '#/mulk-sahibi/mulk/cihangir/odeme?s=red&pid=cihangir&key=2026-09',
     '#/kiraci/talepler?s=yeni-talep&pid=moda', '#/kiraci/belgeler?s=belge&pid=moda',
     '#/mulk-sahibi/mulk/levent?s=ev-duzenle&pid=levent', '#/mulk-sahibi/mulk/bagdat/odeme?s=odeme&pid=bagdat',
-    '#/kiraci/talepler?s=yeni-talep&pid=levent', '#/mulk-sahibi/mulk/levent/belge?s=belge&pid=levent'
+    '#/kiraci/talepler?s=yeni-talep&pid=levent', '#/mulk-sahibi/mulk/levent/belge?s=belge&pid=levent', '#/mulk-sahibi?s=abonelik'
   ];
 
   test('tüm ekran ve alt sayfalarda çevrilmemiş metin kalmaz', async ({ page }) => {

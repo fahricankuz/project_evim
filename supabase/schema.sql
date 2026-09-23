@@ -839,3 +839,103 @@ alter table public.requests enable trigger on_request_change;
 update public.properties set aidat_payer = 'Mülk sahibi' where aidat_payer = 'Ev sahibi';
 update public.properties set bills = replace(bills::text, '"Ev sahibi"', '"Mülk sahibi"')::jsonb
   where bills::text like '%"Ev sahibi"%';
+
+-- =====================================================================
+-- Mülk sahibi aboneliği
+--
+-- Kiracılar ücretsizdir. Mülk sahibi hesabı açılınca deneme süresi başlar;
+-- süre bitince abonelik yoksa kayıtları salt okunur olur (okuma, mesajlaşma,
+-- dışa aktarma ve hesap silme açık kalır). Abonelik durumu mağazalardan
+-- (App Store, Google Play, web) RevenueCat üzerinden gelir ve yalnızca
+-- sunucu fonksiyonu yazar: supabase/functions/billing.
+-- =====================================================================
+
+create table if not exists public.subscriptions (
+  user_id        uuid primary key references public.profiles(id) on delete cascade,
+  entitlement    text not null default 'pro',
+  product_id     text,
+  store          text,             -- app_store | play_store | stripe | rc_billing | promotional
+  period_type    text,             -- normal | trial | intro
+  expires_at     timestamptz,      -- null: süresiz (ör. promosyon)
+  active         boolean not null default false,
+  will_renew     boolean not null default false,
+  billing_issue  boolean not null default false,
+  environment    text,             -- production | sandbox
+  updated_at     timestamptz not null default now()
+);
+alter table public.subscriptions enable row level security;
+drop policy if exists subs_read_own on public.subscriptions;
+create policy subs_read_own on public.subscriptions for select to authenticated using (user_id = auth.uid());
+-- Yazma yetkisi yok: satırları yalnızca service_role (billing fonksiyonu) yazar.
+grant select on public.subscriptions to authenticated;
+revoke insert, update, delete on public.subscriptions from authenticated;
+
+/** Deneme süresi (gün). Uygulama bu değeri my_access() ile okur. */
+create or replace function public.trial_days() returns int language sql immutable as $$ select 14 $$;
+
+/** Kullanıcının erişim durumu: rol, deneme, abonelik. */
+create or replace function public.access_state(uid uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  p public.profiles;
+  s public.subscriptions;
+  subscribed boolean;
+  trial_end timestamptz;
+begin
+  select * into p from public.profiles where id = uid;
+  if p.id is null then return jsonb_build_object('access', false); end if;
+  select * into s from public.subscriptions where user_id = uid;
+  subscribed := s.user_id is not null and s.active and (s.expires_at is null or s.expires_at > now());
+  trial_end := p.created_at + make_interval(days => public.trial_days());
+  return jsonb_build_object(
+    'role', p.role,
+    'access', p.role = 'tenant' or subscribed or now() < trial_end,
+    'subscribed', subscribed,
+    'inTrial', not subscribed and now() < trial_end,
+    'trialEnds', trial_end,
+    'trialDays', public.trial_days(),
+    'expiresAt', s.expires_at,
+    'store', s.store,
+    'productId', s.product_id,
+    'willRenew', coalesce(s.will_renew, false),
+    'billingIssue', coalesce(s.billing_issue, false)
+  );
+end $$;
+
+create or replace function public.my_access() returns jsonb
+language sql stable security definer set search_path = public as $$ select public.access_state(auth.uid()) $$;
+grant execute on function public.my_access() to authenticated;
+revoke execute on function public.access_state(uuid) from public;
+
+create or replace function public.has_access(uid uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((public.access_state(uid)->>'access')::boolean, false)
+$$;
+
+/** Aboneliği olmayan mülk sahibinin yazmasını engeller. Kiracının işlemleri
+    (dekont, talep, yenileme kabulü…) mülk sahibinin aboneliğinden etkilenmez. */
+create or replace function public.require_access()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return new; end if;
+  if (select role from public.profiles where id = auth.uid()) = 'landlord'
+     and not public.has_access(auth.uid()) then
+    raise exception 'Abonelik gerekli: deneme süren bitti' using errcode = 'EV402';
+  end if;
+  return new;
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['properties','payments','rent_history','requests','documents',
+                           'expenses','property_shared','invites'] loop
+    execute format('drop trigger if exists require_access on public.%I', t);
+    execute format('create trigger require_access before insert or update on public.%I
+                    for each row execute function public.require_access()', t);
+  end loop;
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'subscriptions') then
+    alter publication supabase_realtime add table public.subscriptions;
+  end if;
+end $$;

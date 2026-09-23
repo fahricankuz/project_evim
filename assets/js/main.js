@@ -4,7 +4,7 @@ import { t } from './i18n.js';
 import { S, ui, save, applyTheme, bootInfo } from './state.js';
 import { start, onChange, go, closeSheet, current, back } from './router.js';
 import { render } from './render.js';
-import { A, onSubmit, onInput, onChangeField } from './actions.js';
+import { A, onSubmit, onInput, onChangeField, blockedAct } from './actions.js';
 import { trapFocus } from './sheets.js';
 import { handleKey as handleConfirmKey } from './confirm.js';
 import { reminders, normalizeAll } from './logic.js';
@@ -38,6 +38,7 @@ document.addEventListener('click', ev => {
   const fn = A[el.dataset.act];
   if (!fn) return;
   ev.preventDefault();
+  if (blockedAct(el.dataset.act)) return;
   fn(el.dataset, el, ev);
 });
 

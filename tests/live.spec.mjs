@@ -221,3 +221,69 @@ test('hesap sayfası: profil güncelleme ve hesabı silme', async ({ page }) => 
   await expect(page).toHaveURL(/#\/giris$/);
   expect((await db(page)).users).toEqual([]);
 });
+
+/* ---- abonelik ---- */
+
+test('yeni mülk sahibi deneme sürümüyle başlar; kiracıda abonelik yok', async ({ page }) => {
+  await signup(page, { name:'Deniz Sahip', email:'deniz@ornek.com', role:'landlord' });
+  await expect(page).toHaveURL(/#\/mulk-sahibi$/);
+  await expect(screen(page).locator('.subbar')).toContainText('Deneme sürümü');
+  await expect(screen(page).locator('.subbar')).toContainText('14 gün kaldı');
+  await page.click('.subbar button:has-text("Abone ol")');
+  await expect(sheet(page).locator('h3')).toHaveText('Mülk sahibi aboneliği');
+  await expect(sheet(page)).toContainText('kendiliğinden yenilenir');
+  await expect(sheet(page).locator('.plan')).toHaveCount(2);
+  // Web ödeme bağlantısı tanımlı değilse açık bir hata verilir.
+  await sheet(page).locator('button[data-act=subscribe]').click();
+  await expect(page.locator('#banners')).toContainText('Web ödeme bağlantısı henüz tanımlı değil');
+  await page.keyboard.press('Escape');
+
+  await logout(page);
+  await signup(page, { name:'Kerem Kiracı', email:'kerem@ornek.com', role:'tenant' });
+  await expect(page.locator('.subbar')).toHaveCount(0);
+});
+
+test('deneme bitince kayıtlar salt okunur; abonelik geri yüklenince açılır', async ({ page }) => {
+  await signup(page, { name:'Ece Sahip', email:'ece@ornek.com', role:'landlord' });
+  await expect(page).toHaveURL(/#\/mulk-sahibi$/);
+  // Deneme süresi 30 gün önce başlamış olsun.
+  await page.evaluate(() => {
+    const d = JSON.parse(localStorage.getItem('__fakedb'));
+    d.tables.profiles.forEach(p => { p.created_at = new Date(Date.now() - 30 * 86400000).toISOString(); });
+    localStorage.setItem('__fakedb', JSON.stringify(d));
+  });
+  await page.reload();
+  await expect(screen(page).locator('.subbar.lock')).toContainText('Deneme süren bitti');
+
+  // Mülk eklemek abonelik sayfasını açar, kayıt oluşmaz.
+  await page.click('#screen button:has-text("Mülk ekle")');
+  await sheet(page).locator('input[name=name]').fill('Kilitli');
+  await sheet(page).locator('input[name=addr]').fill('A');
+  await sheet(page).locator('input[name=rent]').fill('1000');
+  await sheet(page).locator('button:has-text("Kaydet ve davet et")').click();
+  await expect(sheet(page).locator('h3')).toHaveText('Mülk sahibi aboneliği');
+  await expect(page.locator('#banners')).toContainText('Abonelik gerekli');
+  expect((await db(page)).tables.properties).toEqual([]);
+
+  // Mağazada satın alınmış abonelik "geri yükle" ile gelir.
+  await page.evaluate(() => {
+    const d = JSON.parse(localStorage.getItem('__fakedb'));
+    d.nextSubscription = { active:true, expires_at:new Date(Date.now() + 30 * 86400000).toISOString(), store:'app_store', product_id:'evim_aylik', will_renew:true };
+    localStorage.setItem('__fakedb', JSON.stringify(d));
+  });
+  await sheet(page).locator('button:has-text("Satın alımları geri yükle")').click();
+  await expect(page.locator('#banners')).toContainText('Aboneliğin geri yüklendi');
+  await expect(sheet(page)).toContainText('Aboneliğin aktif');
+  await expect(sheet(page)).toContainText('App Store');
+  await expect(sheet(page).locator('a:has-text("Aboneliği yönet")')).toHaveAttribute('href', /apps\.apple\.com/);
+  // Geri: yarım kalan forma dönülür; artık kaydedilebilir.
+  await page.keyboard.press('Escape');
+  await expect(sheet(page).locator('h3')).toHaveText('Mülk ekle');
+  await expect(page.locator('.subbar')).toHaveCount(0);
+  await sheet(page).locator('input[name=name]').fill('Açık');
+  await sheet(page).locator('input[name=addr]').fill('A');
+  await sheet(page).locator('input[name=rent]').fill('1000');
+  await sheet(page).locator('button:has-text("Kaydet ve davet et")').click();
+  await expect(sheet(page)).toContainText('Kiracını davet et');
+  expect((await db(page)).tables.properties.map(p => p.name)).toEqual(['Açık']);
+});

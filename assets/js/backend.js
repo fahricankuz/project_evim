@@ -18,7 +18,8 @@ export const live = {
   user: null,
   profile: null,
   status: 'idle',      // idle | syncing | synced | offline | error
-  loaded: false
+  loaded: false,
+  access: null         // my_access(): rol, deneme, abonelik (bkz. billing.js)
 };
 
 const DEFAULT_SETTINGS = { rentDays:3, renewDays:60, insDays:30, evictDays:90, reqUpdates:true, lateNotice:true };
@@ -119,6 +120,7 @@ export async function signOut(){
   try { if (uidWas) localStorage.removeItem('evim-live:' + uidWas); } catch(e){}
   synced = {};
   live.profile = null;
+  live.access = null;
   live.loaded = false;
   replaceState(emptyState());
 }
@@ -144,6 +146,29 @@ export async function updateProfile({ name, phone }){
 /** Sunucunun göndereceği bildirimlerin dili. */
 export async function setProfileLang(lang){
   must(await sb().from('profiles').update({ lang }).eq('id', me()));
+}
+
+/* ---- abonelik ---- */
+
+/** Erişim durumunu sunucudan okur (deneme, abonelik). */
+export async function refreshAccess(redraw = true){
+  if (!me()) return null;
+  try {
+    live.access = must(await sb().rpc('my_access'));
+  } catch(e){
+    // Okunamazsa sunucu yine de kuralı uygular; arayüz kilitlenmesin.
+    console.warn('Erişim durumu okunamadı', e);
+  }
+  if (redraw) onData();
+  return live.access;
+}
+
+/** Aboneliği RevenueCat'ten tazeletir (satın alma ya da geri yükleme sonrası). */
+export async function syncBilling(){
+  if (!me()) return null;
+  const res = await sb().functions.invoke('billing', { body:{ action:'sync' } });
+  if (res.error) console.warn('Abonelik eşitlenemedi', res.error);
+  return refreshAccess();
 }
 
 export async function deleteAccount(){
@@ -228,6 +253,7 @@ export async function loadAll(){
   setStatus('syncing');
   try {
     live.profile = must(await sb().from('profiles').select('*').eq('id', me()).single());
+    await refreshAccess(false);
     const mine = must(await sb().from('memberships').select('property_id, role').eq('user_id', me()));
     const ids = mine.map(m => m.property_id);
     const built = ids.length ? await fetchRows(ids, false) : [];
@@ -369,6 +395,7 @@ async function apply(op){
 
 export function humanError(e){
   const m = String(e?.message || e || '');
+  if (e?.code === 'EV402' || /Abonelik gerekli/.test(m)) return t('Deneme süren bitti. Kayıtları değiştirmek için abone ol; okuma ve mesajlaşma açık.');
   if (/Invalid login credentials/i.test(m)) return t('E-posta ya da şifre hatalı.');
   if (/Email not confirmed/i.test(m)) return t('E-posta adresini henüz doğrulamadın. Gelen kutunu kontrol et.');
   if (/User already registered/i.test(m)) return t('Bu e-posta ile bir hesap zaten var. Giriş yapmayı dene.');
@@ -501,6 +528,9 @@ function subscribe(){
     () => loadAll().then(subscribe));
   channel.on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:'user_id=eq.' + me() },
     payload => onNotification(payload.new));
+  // Mağazadan abonelik değişikliği (satın alma, iptal, süre bitimi).
+  channel.on('postgres_changes', { event:'*', schema:'public', table:'subscriptions', filter:'user_id=eq.' + me() },
+    () => refreshAccess());
   channel.subscribe();
 }
 

@@ -10,6 +10,9 @@
      veritabanındaki satır düzeyi kurallarla sağlanır. service_role
      anahtarını ASLA buraya yazmayın.
    - vapidPublicKey: anlık bildirimler için (npx web-push generate-vapid-keys).
+   - billing: mülk sahibi aboneliği (bkz. docs/abonelik.md). RevenueCat'in
+     herkese açık uygulama anahtarları (appl_…, goog_…) buraya yazılabilir;
+     gizli anahtar (sk_…) yalnızca sunucu fonksiyonunda durur.
 
    Yapılandırılmış bir sitede adrese ?demo eklenirse yine demo açılır. */
 
@@ -17,6 +20,20 @@ export const CONFIG = Object.assign({
   supabaseUrl: '',
   supabaseAnonKey: '',
   vapidPublicKey: '',
+  billing: {
+    revenuecatIosKey: '',       // RevenueCat → Apps → App Store uygulaması → Public API key (appl_…)
+    revenuecatAndroidKey: '',   // RevenueCat → Apps → Play Store uygulaması → Public API key (goog_…)
+    webPurchaseUrl: '',         // RevenueCat Web Purchase Link (https://pay.rev.cat/…); kullanıcı kimliği sona eklenir
+    webManageUrl: '',           // web aboneleri için abonelik yönetimi sayfası
+    termsUrl: '',               // kullanım koşulları (mağazalar zorunlu tutar)
+    privacyUrl: '',             // gizlilik politikası
+    androidPackage: 'app.evim', // Play Store abonelik yönetimi bağlantısı için
+    // Mağazadaki paketler. Fiyat mobilde mağazadan okunur; web'de burada yazan gösterilir.
+    plans: [
+      { id:'monthly', package:'$rc_monthly', price:'' },
+      { id:'annual',  package:'$rc_annual',  price:'' }
+    ]
+  },
   // supabase-js modülünün adresi (testler sahte bir sürümle değiştirir).
   supabaseJs: 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
 }, globalThis.EVIM_CONFIG || {});

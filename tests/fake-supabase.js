@@ -5,10 +5,10 @@
 
 const KEY = '__fakedb';
 const TABLES = ['profiles','properties','property_shared','memberships','invites','payments','rent_history',
-                'requests','messages','documents','expenses','notifications','push_subscriptions'];
+                'requests','messages','documents','expenses','notifications','push_subscriptions','subscriptions'];
 
 function load(){
-  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) return d; } catch(e){}
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d){ TABLES.forEach(t => d.tables[t] = d.tables[t] || []); return d; } } catch(e){}
   const d = { users:[], session:null, storage:{}, tables:{} };
   TABLES.forEach(t => d.tables[t] = []);
   return d;
@@ -21,7 +21,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const KEYS = {
   profiles:['id'], properties:['id'], property_shared:['property_id'], memberships:['property_id','user_id'],
   invites:['code'], payments:['property_id','month'], rent_history:['id'], requests:['id'], messages:['id'],
-  documents:['id'], expenses:['id'], notifications:['id'], push_subscriptions:['endpoint']
+  documents:['id'], expenses:['id'], notifications:['id'], push_subscriptions:['endpoint'], subscriptions:['user_id']
 };
 
 function defaults(table, row, db){
@@ -42,6 +42,20 @@ function afterInsert(table, row, db){
       db.tables.rent_history.push({ id:row.id + ':' + row.start_date, property_id:row.id, from_date:row.start_date, amount:row.rent, note:'Sözleşme başlangıcı' });
   }
 }
+
+/* Abonelik: schema.sql → access_state / require_access ile aynı kural. */
+const TRIAL_DAYS = 14;
+function accessOf(db, uid){
+  const p = db.tables.profiles.find(x => x.id === uid);
+  if (!p) return { access:false };
+  const s = db.tables.subscriptions.find(x => x.user_id === uid);
+  const subscribed = !!(s && s.active && (!s.expires_at || Date.parse(s.expires_at) > Date.now()));
+  const trialEnds = new Date(Date.parse(p.created_at || now()) + TRIAL_DAYS * 86400000).toISOString();
+  const inTrial = !subscribed && Date.now() < Date.parse(trialEnds);
+  return { role:p.role, access: p.role === 'tenant' || subscribed || inTrial, subscribed, inTrial, trialEnds, trialDays:TRIAL_DAYS,
+    expiresAt: s?.expires_at || null, store: s?.store || null, productId: s?.product_id || null, willRenew: !!s?.will_renew, billingIssue: !!s?.billing_issue };
+}
+const GATED = ['properties','payments','rent_history','requests','documents','expenses','property_shared','invites'];
 
 const matchKey = (table, a, b) => (KEYS[table] || ['id']).every(k => a[k] === b[k]);
 
@@ -65,6 +79,11 @@ class Query {
     const db = load();
     this.c._calls.push({ table:this.t, op:this.op });
     if (this.c._fail && this.c._fail(this.t, this.op)) return { data:null, error:{ message:'Sahte sunucu hatası', code:'XX000' } };
+    const actor = db.session?.user.id;
+    if (actor && GATED.includes(this.t) && ['insert','upsert','update'].includes(this.op)){
+      const a = accessOf(db, actor);
+      if (a.role === 'landlord' && !a.access) return { data:null, error:{ message:'Abonelik gerekli: deneme süren bitti', code:'EV402' } };
+    }
     const list = db.tables[this.t];
     const pass = r => this.filters.every(f => f(r));
     let out;
@@ -121,7 +140,7 @@ export function createClient(){
         const meta = (options && options.data) || {};
         const user = { id: uuid(), email };
         db.users.push({ ...user, password, meta });
-        db.tables.profiles.push({ id:user.id, role: meta.role === 'landlord' ? 'landlord' : 'tenant', name: meta.name || email, phone:'', lang:'tr', settings:{} });
+        db.tables.profiles.push({ id:user.id, role: meta.role === 'landlord' ? 'landlord' : 'tenant', name: meta.name || email, phone:'', lang:'tr', settings:{}, created_at: now() });
         // Doğrulama gerektiren kayıt: e-posta 'dogrula' ile başlıyorsa oturum açılmaz.
         if (/^dogrula/.test(email)){ persist(db); return { data:{ user, session:null }, error:null }; }
         db.session = { user, access_token:'fake' };
@@ -164,6 +183,7 @@ export function createClient(){
         persist(db);
         return { data:inv.property_id, error:null };
       }
+      if (name === 'my_access') return { data: accessOf(db, me), error:null };
       if (name === 'delete_my_account'){
         db.users = db.users.filter(u => u.id !== me);
         db.tables.profiles = db.tables.profiles.filter(p => p.id !== me);
@@ -174,6 +194,20 @@ export function createClient(){
         return { data:null, error:null };
       }
       return { data:null, error:{ message:'Bilinmeyen rpc ' + name } };
+    },
+    functions: {
+      // Gerçekte billing fonksiyonu RevenueCat'ten okur; testte satırı db.nextSubscription belirler.
+      async invoke(name){
+        const db = load();
+        client._calls.push({ fn:name });
+        const me = db.session?.user.id;
+        if (name === 'billing' && me && db.nextSubscription){
+          db.tables.subscriptions = db.tables.subscriptions.filter(x => x.user_id !== me);
+          db.tables.subscriptions.push(Object.assign({ user_id:me }, db.nextSubscription));
+          persist(db);
+        }
+        return { data:{ ok:true }, error:null };
+      }
     },
     storage: {
       from(){

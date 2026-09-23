@@ -14,6 +14,7 @@ import { ask } from './confirm.js';
 import { migrate } from './migrate.js';
 import { t, locale, setLang, getLang } from './i18n.js';
 import { install } from './pwa.js';
+import * as billing from './billing.js';
 import { LIVE } from './config.js';
 import * as backend from './backend.js';
 import { AUTH_ACTIONS, AUTH_FORMS, authSubmit } from './auth.js';
@@ -21,6 +22,26 @@ import { startTour, nextStep, prevStep, endTour, TOUR } from './tour.js';
 import {
   iso, t0, parse, fmt, fmtFull, monthYear, tl, daysTo, shrink, download, esc, announce, uid, percent
 } from './util.js';
+
+/* ---------------- abonelik kilidi ---------------- */
+
+/** Mülk sahibinin kayıt değiştiren işlemleri (abonelik yoksa kapalı). */
+const WRITE_ACTS = new Set(['advance','rewind','decide','okCost','approvePay','nudge','sendRenewal','cancelRenewal',
+  'removeDoc','removeRoom','removeShot','approveInspect','nudgeInspect','removeProp','removeTenant','chooseQuote','removeQuote',
+  'removeExpense','addUnpaidDeduction','removeDeduction','removeExitShot','approveMoveOut','cancelMoveOut','copyInvite']);
+/** Kilitliyken de açık formlar: mesaj ve hesap işlemleri. */
+const OPEN_FORMS = new Set(['msg', ...AUTH_FORMS]);
+const WRITE_INPUTS = new Set(['cost','roomNote','roomPhoto','exitNote','exitCond','exitPhoto']);
+
+function locked(){
+  if (billing.canWrite()) return false;
+  openSheet('abonelik');
+  notify({ title:t('Abonelik gerekli'), body:t('Deneme süren bitti. Kayıtları değiştirmek için abone ol; okuma ve mesajlaşma açık.'), icon:'key' }, false);
+  return true;
+}
+
+/** main.js tıklama yöneticisi çağırır: işlem kilitliyse true. */
+export function blockedAct(act){ return WRITE_ACTS.has(act) && locked(); }
 
 /** Formdaki kiracı türü alanlarından şirket bilgisi ve stopaj. */
 function lesseeFrom(fd){
@@ -75,6 +96,31 @@ export const A = {
 
   reqTab: d => { ui.reqTab = d.v; render(); },
   propFilter: d => { ui.propFilter = d.v; render(); },
+
+  /* ---- abonelik ---- */
+  billingPlan: d => { ui.billingPlan = d.v; refreshLayer(); },
+  subscribe: async d => {
+    try {
+      const ok = await billing.purchase(d.v || ui.billingPlan || 'annual');
+      if (ok === 'redirect') return;
+      if (ok){
+        closeSheet(); render();
+        notify({ title:t('Aboneliğin başladı'), body:t('Teşekkürler! Tüm özellikler açık.'), icon:'key' });
+      }
+    } catch(e){
+      notify({ title:t('Satın alma tamamlanamadı'), body: String(e?.message || e), icon:'card' }, false);
+    }
+  },
+  restorePurchases: async () => {
+    try {
+      const ok = await billing.restore();
+      render(); refreshLayer();
+      notify({ title: ok ? t('Aboneliğin geri yüklendi') : t('Geri yüklenecek abonelik bulunamadı'), body: ok ? t('Tüm özellikler açık.') : t('Aynı mağaza hesabıyla giriş yaptığından emin ol.'), icon:'key' }, false);
+    } catch(e){
+      notify({ title:t('Geri yükleme tamamlanamadı'), body: String(e?.message || e), icon:'card' }, false);
+    }
+  },
+  demoBilling: d => { billing.demoSet(d.v); render(); refreshLayer(); },
   newPropType: d => {
     // Formdaki yazılanları koruyarak tipi değiştir.
     const f = document.querySelector('form[data-form="addProp"]');
@@ -512,6 +558,7 @@ export async function onSubmit(ev){
   const p = f.dataset.pid ? P(f.dataset.pid) : null;
 
   if (AUTH_FORMS.includes(type)) return authSubmit(type, fd, f);
+  if (!OPEN_FORMS.has(type) && locked()) return;
 
   if (type === 'msg'){
     const text = String(fd.get('text') || '').trim();
@@ -818,6 +865,7 @@ export function onInput(ev){
   const d = ev.target.dataset || {};
   const n = d.input;
   if (!n) return;
+  if (WRITE_INPUTS.has(n) && !billing.canWrite()){ render(); locked(); return; }
 
   if (n === 'q'){
     ui.q = ev.target.value;
@@ -870,6 +918,7 @@ export async function onChangeField(ev){
   const d = ev.target.dataset || {};
   const n = d.input;
   if (!n) return;
+  if (WRITE_INPUTS.has(n) && !billing.canWrite()){ render(); locked(); return; }
 
   if (n === 'cost'){
     const p = P(d.pid), r = reqOf(p, d.id);

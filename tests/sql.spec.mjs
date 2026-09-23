@@ -266,3 +266,59 @@ test('v4 veri güncellemesi "Ev sahibi" değerini bildirim üretmeden yeniler', 
   expect(await q(`select aidat_payer, bills from public.properties where id = 'p1'`)).toEqual([{ aidat_payer:'Mülk sahibi', bills:[{ n:'Su', who:'Mülk sahibi' }] }]);
   expect((await q(`select count(*)::int c from public.notifications`))[0].c).toBe(before);
 });
+
+/* ---- abonelik ---- */
+
+const X = '00000000-0000-0000-0000-0000000000f1';   // denemesi bitmiş mülk sahibi
+
+test('deneme süresindeki mülk sahibinin erişimi var; kiracı her zaman ücretsiz', async () => {
+  await as(L);
+  const a = (await q(`select public.my_access() a`))[0].a;
+  expect(a).toMatchObject({ role:'landlord', access:true, inTrial:true, subscribed:false, trialDays:14 });
+  await as(T1);
+  expect((await q(`select public.my_access() a`))[0].a).toMatchObject({ role:'tenant', access:true });
+});
+
+test('deneme bitince mülk sahibi yazamaz, okur ve mesajlaşır; kiracı etkilenmez', async () => {
+  await as(null);
+  await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'eski@ornek.com', '{"role":"landlord","name":"Eski"}')`, [X]);
+  await as(X);
+  await db.query(`insert into public.properties (id, owner_id, name, rent, due_day) values ('px', $1, 'Eski ev', 10000, 1)`, [X]);
+  await as(null);
+  await db.query(`update public.profiles set created_at = now() - interval '30 days' where id = $1`, [X]);
+  await db.query(`insert into public.memberships (property_id, user_id, role) values ('px', $1, 'tenant')`, [T2]);
+
+  await as(X);
+  expect((await q(`select public.my_access() a`))[0].a).toMatchObject({ access:false, inTrial:false });
+  await expect(db.query(`insert into public.properties (id, owner_id, name, rent, due_day) values ('px2', $1, 'Yeni', 1, 1)`, [X])).rejects.toThrow(/Abonelik gerekli/);
+  await expect(db.query(`update public.properties set rent = 20000 where id = 'px'`)).rejects.toThrow(/Abonelik gerekli/);
+  await expect(db.query(`insert into public.expenses (id, property_id, cat, amount, spent_on) values ('ex', 'px', 'Diğer', 1, current_date)`)).rejects.toThrow(/Abonelik gerekli/);
+  expect((await q(`select name from public.properties where id = 'px'`))[0].name).toBe('Eski ev');
+  await db.query(`insert into public.messages (id, property_id, from_role, by_user, body) values ('mx', 'px', 'landlord', $1, 'Merhaba')`, [X]);
+
+  // Kiracı dekont yükleyebilir.
+  await as(T2);
+  await db.query(`insert into public.payments (property_id, month, status, amount) values ('px', '2026-03', 'review', 10000)`);
+});
+
+test('abonelik gelince yazma açılır; süresi geçmiş abonelik açmaz', async () => {
+  await as(null);
+  await db.query(`insert into public.subscriptions (user_id, active, expires_at, store, product_id) values ($1, true, now() - interval '1 day', 'app_store', 'aylik')`, [X]);
+  await as(X);
+  await expect(db.query(`update public.properties set rent = 20000 where id = 'px'`)).rejects.toThrow(/Abonelik gerekli/);
+
+  await as(null);
+  await db.query(`update public.subscriptions set expires_at = now() + interval '30 days', will_renew = true where user_id = $1`, [X]);
+  await as(X);
+  expect((await q(`select public.my_access() a`))[0].a).toMatchObject({ access:true, subscribed:true, store:'app_store', willRenew:true });
+  await db.query(`update public.properties set rent = 20000 where id = 'px'`);
+});
+
+test('kullanıcı abonelik satırını kendisi yazamaz, başkasınınkini göremez', async () => {
+  await as(L);
+  await expect(db.query(`insert into public.subscriptions (user_id, active, expires_at) values ($1, true, now() + interval '1 year')`, [L])).rejects.toThrow();
+  expect(await q(`select * from public.subscriptions`)).toEqual([]);
+  await as(X);
+  await expect(db.query(`update public.subscriptions set expires_at = now() + interval '10 years' where user_id = $1`, [X])).rejects.toThrow();
+  expect((await q(`select count(*)::int c from public.subscriptions`))[0].c).toBe(1);
+});
