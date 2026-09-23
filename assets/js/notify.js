@@ -1,5 +1,6 @@
 /* Ekran üstü bildirim şeridi ve olay geçmişi. */
 
+import { t } from './i18n.js';
 import { S, save } from './state.js';
 import { I } from './icons.js';
 import { esc, announce } from './util.js';
@@ -29,7 +30,7 @@ export function notify(n, log = true){
     '<div class="tx"><div class="tt">'+esc(n.title)+'</div><div class="bd">'+esc(n.body)+'</div>' +
     (n.actions ? '<div class="ba">'+n.actions.map((a,i) =>
       '<button class="btn small '+(i===0?'primary':'ghost')+'" data-b="'+i+'">'+esc(a.label)+'</button>').join('')+'</div>' : '') +
-    '</div><button class="x" aria-label="Bildirimi kapat">'+I.x.replace('<svg','<svg width="18" height="18"')+'</button>';
+    ('</div><button class="x" aria-label="'+t('Bildirimi kapat')+'">')+I.x.replace('<svg','<svg width="18" height="18"')+'</button>';
 
   el.addEventListener('click', ev => {
     const b = ev.target.closest('[data-b]');

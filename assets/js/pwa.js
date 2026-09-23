@@ -1,5 +1,6 @@
 /* PWA: service worker kaydı, kurulum düğmesi, güncelleme ve çevrimdışı bildirimi. */
 
+import { t } from './i18n.js';
 import { notify } from './notify.js';
 
 export const pwa = {
@@ -26,11 +27,11 @@ export function initPwa(){
     pwa.installable = false;
     pwa.installed = true;
     pwa.onChange();
-    notify({ title:'Evim yüklendi', body:'Artık ana ekrandan açabilirsin.', icon:'home' }, false);
+    notify({ title:t('Evim yüklendi'), body:t('Artık ana ekrandan açabilirsin.'), icon:'home' }, false);
   });
 
-  addEventListener('offline', () => notify({ title:'Çevrimdışısın', body:'Uygulama çalışmaya devam eder; değişiklikler bu cihazda saklanır.', icon:'bell' }, false));
-  addEventListener('online', () => notify({ title:'Yeniden bağlandın', body:'Bağlantı geri geldi.', icon:'bell' }, false));
+  addEventListener('offline', () => notify({ title:t('Çevrimdışısın'), body:t('Uygulama çalışmaya devam eder; değişiklikler bu cihazda saklanır.'), icon:'bell' }, false));
+  addEventListener('online', () => notify({ title:t('Yeniden bağlandın'), body:t('Bağlantı geri geldi.'), icon:'bell' }, false));
 
   registerWorker();
 }
@@ -48,8 +49,8 @@ async function registerWorker(){
     // clients.claim() da controllerchange tetikler ve o zaman yenilenmemeli.
     let updateRequested = false;
     const offerUpdate = worker => notify({
-      title:'Yeni sürüm hazır', body:'Güncellemek için yenile.', icon:'home',
-      actions:[{ label:'Yenile', run:() => { updateRequested = true; worker.postMessage('skipWaiting'); } }]
+      title:t('Yeni sürüm hazır'), body:t('Güncellemek için yenile.'), icon:'home',
+      actions:[{ label:t('Yenile'), run:() => { updateRequested = true; worker.postMessage('skipWaiting'); } }]
     }, false);
 
     if (reg.waiting && navigator.serviceWorker.controller) offerUpdate(reg.waiting);

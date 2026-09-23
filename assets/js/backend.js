@@ -5,6 +5,7 @@
    farkı yazar (bkz. mapping.js). Başka cihazlardan gelen değişiklikler anlık
    olarak alınır. Demo modunda bu modülün hiçbir işlevi çalışmaz. */
 
+import { t } from './i18n.js';
 import { CONFIG, LIVE } from './config.js';
 import { S, ui, VERSION, useStorageKey, replaceState, saveLocal, hooks } from './state.js';
 import { buildProperty, diffProperty, pendingMedia, storedPaths, storedPath, isStored, SB } from './mapping.js';
@@ -140,6 +141,11 @@ export async function updateProfile({ name, phone }){
   await loadAll();
 }
 
+/** Sunucunun göndereceği bildirimlerin dili. */
+export async function setProfileLang(lang){
+  must(await sb().from('profiles').update({ lang }).eq('id', me()));
+}
+
 export async function deleteAccount(){
   must(await sb().rpc('delete_my_account'));
   await signOut();
@@ -171,9 +177,9 @@ export async function openSession(){
 }
 
 async function fetchRows(ids, single){
-  const byProp = (t, col = 'property_id') => single
-    ? sb().from(t).select('*').eq(col, ids[0])
-    : sb().from(t).select('*').in(col, ids);
+  const byProp = (table, col = 'property_id') => single
+    ? sb().from(table).select('*').eq(col, ids[0])
+    : sb().from(table).select('*').in(col, ids);
 
   const [props, shared, members, invites, payments, history, requests, messages, documents, expenses] = await Promise.all([
     byProp('properties', 'id'),
@@ -339,7 +345,7 @@ async function flush(){
       setStatus('offline');           // bağlantı gelince yeniden denenir
     } else {
       setStatus('error');
-      notify({ title:'Kaydedilemedi', body: humanError(e), icon:'bell' }, false);
+      notify({ title:t('Kaydedilemedi'), body: humanError(e), icon:'bell' }, false);
       // Sunucunun reddettiği değişikliği geri al: güncel hali yeniden yükle.
       await loadAll().catch(() => {});
     }
@@ -350,12 +356,12 @@ async function flush(){
 }
 
 async function apply(op){
-  const t = sb().from(op.table);
+  const tbl = sb().from(op.table);
   let q;
-  if (op.kind === 'insert') q = t.insert(op.rows);
-  else if (op.kind === 'upsert') q = t.upsert(op.rows, { onConflict: op.onConflict });
+  if (op.kind === 'insert') q = tbl.insert(op.rows);
+  else if (op.kind === 'upsert') q = tbl.upsert(op.rows, { onConflict: op.onConflict });
   else {
-    q = op.kind === 'update' ? t.update(op.values) : t.delete();
+    q = op.kind === 'update' ? tbl.update(op.values) : tbl.delete();
     Object.entries(op.match).forEach(([k, v]) => { q = Array.isArray(v) ? q.in(k, v) : q.eq(k, v); });
   }
   must(await q);
@@ -363,14 +369,14 @@ async function apply(op){
 
 export function humanError(e){
   const m = String(e?.message || e || '');
-  if (/Invalid login credentials/i.test(m)) return 'E-posta ya da şifre hatalı.';
-  if (/Email not confirmed/i.test(m)) return 'E-posta adresini henüz doğrulamadın. Gelen kutunu kontrol et.';
-  if (/User already registered/i.test(m)) return 'Bu e-posta ile bir hesap zaten var. Giriş yapmayı dene.';
-  if (/Password should be at least/i.test(m)) return 'Şifre en az 8 karakter olmalı.';
-  if (/rate limit/i.test(m)) return 'Çok fazla deneme yapıldı. Biraz sonra tekrar dene.';
-  if (/Failed to fetch|NetworkError|network/i.test(m)) return 'Sunucuya ulaşılamadı. Bağlantını kontrol et.';
-  if (e?.code === '42501' || /row-level security|permission/i.test(m)) return m && !/row-level/.test(m) ? m : 'Bu işlem için yetkin yok.';
-  return m || 'Beklenmeyen bir hata oluştu.';
+  if (/Invalid login credentials/i.test(m)) return t('E-posta ya da şifre hatalı.');
+  if (/Email not confirmed/i.test(m)) return t('E-posta adresini henüz doğrulamadın. Gelen kutunu kontrol et.');
+  if (/User already registered/i.test(m)) return t('Bu e-posta ile bir hesap zaten var. Giriş yapmayı dene.');
+  if (/Password should be at least/i.test(m)) return t('Şifre en az 8 karakter olmalı.');
+  if (/rate limit/i.test(m)) return t('Çok fazla deneme yapıldı. Biraz sonra tekrar dene.');
+  if (/Failed to fetch|NetworkError|network/i.test(m)) return t('Sunucuya ulaşılamadı. Bağlantını kontrol et.');
+  if (e?.code === '42501' || /row-level security|permission/i.test(m)) return m && !/row-level/.test(m) ? m : t('Bu işlem için yetkin yok.');
+  return m || t('Beklenmeyen bir hata oluştu.');
 }
 
 /* ------------------------------------------------------------------ */
@@ -418,7 +424,7 @@ export async function storeFile(pid, file, { maxSide = 900 } = {}){
       return SB + path;
     }
     if (file.size > 10 * 1024 * 1024){
-      notify({ title:'Dosya çok büyük', body:'En fazla 10 MB yüklenebilir.', icon:'doc' }, false);
+      notify({ title:t('Dosya çok büyük'), body:t('En fazla 10 MB yüklenebilir.'), icon:'doc' }, false);
       return null;
     }
     const path = await upload(pid, file);
@@ -426,7 +432,7 @@ export async function storeFile(pid, file, { maxSide = 900 } = {}){
   } catch(e){
     console.warn('Yükleme hatası', e);
     if (small) return small;            // eşitlemede yeniden denenir
-    notify({ title:'Dosya yüklenemedi', body: humanError(e), icon:'doc' }, false);
+    notify({ title:t('Dosya yüklenemedi'), body: humanError(e), icon:'doc' }, false);
     return null;
   }
 }
@@ -582,10 +588,10 @@ export async function enablePush(){
   const reg = await navigator.serviceWorker.ready;
   if (!LIVE){
     // Demo: yalnızca cihaz bildirimi göster.
-    await reg.showNotification('Evim', { body:'Bildirimler bu cihazda açık.', icon:'assets/icons/icon-192.png' });
+    await reg.showNotification(t('Evim'), { body:t('Bildirimler bu cihazda açık.'), icon:'assets/icons/icon-192.png' });
     return true;
   }
-  if (!CONFIG.vapidPublicKey) throw new Error('Anlık bildirim anahtarı (vapidPublicKey) yapılandırılmamış.');
+  if (!CONFIG.vapidPublicKey) throw new Error(t('Anlık bildirim anahtarı (vapidPublicKey) yapılandırılmamış.'));
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CONFIG.vapidPublicKey) });
   const json = sub.toJSON();
   must(await sb().from('push_subscriptions').upsert({ endpoint: json.endpoint, user_id: me(), keys: json.keys }, { onConflict:'endpoint' }));

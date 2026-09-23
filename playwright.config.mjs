@@ -13,12 +13,15 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}/`,
+    // Uygulama dili tarayıcıdan algılanır; testler Türkçe tarayıcıyla çalışır.
+    locale: 'tr-TR',
+    timezoneId: 'Europe/Istanbul',
     launchOptions: { executablePath },
     trace: 'retain-on-failure'
   },
   projects: [
-    { name: 'masaustu', use: { ...devices['Desktop Chrome'], viewport: { width: 1400, height: 960 }, launchOptions: { executablePath } } },
-    { name: 'mobil', use: { ...devices['Pixel 7'], launchOptions: { executablePath } }, grep: /@mobil/ }
+    { name: 'masaustu', use: { ...devices['Desktop Chrome'], locale: 'tr-TR', viewport: { width: 1400, height: 960 }, launchOptions: { executablePath } } },
+    { name: 'mobil', use: { ...devices['Pixel 7'], locale: 'tr-TR', launchOptions: { executablePath } }, grep: /@mobil/ }
   ],
   webServer: {
     command: `node scripts/serve.mjs ${PORT}`,

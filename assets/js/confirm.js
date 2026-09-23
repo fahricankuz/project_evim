@@ -2,6 +2,7 @@
    Tarayıcının confirm() penceresi iframe içinde (ör. artifact) engellenebildiği
    için onaylar uygulamanın kendi katmanında sorulur. */
 
+import { t } from './i18n.js';
 import { esc } from './util.js';
 
 let pending = null;
@@ -30,8 +31,8 @@ export function ask(o){
         '<div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="cfT" aria-describedby="cfB">' +
           '<h3 id="cfT">'+esc(o.title)+'</h3>' +
           (o.body ? '<p id="cfB" class="muted">'+esc(o.body)+'</p>' : '') +
-          '<div class="row"><button class="btn ghost" style="flex:1" data-confirm="cancel">'+esc(o.cancel || 'Vazgeç')+'</button>' +
-          '<button class="btn '+(o.danger ? 'danger' : 'primary')+'" style="flex:1" data-confirm="ok">'+esc(o.ok || 'Tamam')+'</button></div>' +
+          '<div class="row"><button class="btn ghost" style="flex:1" data-confirm="cancel">'+esc(o.cancel || t('Vazgeç'))+'</button>' +
+          '<button class="btn '+(o.danger ? 'danger' : 'primary')+'" style="flex:1" data-confirm="ok">'+esc(o.ok || t('Tamam'))+'</button></div>' +
         '</div></div>';
 
     host.querySelector('[data-confirm="cancel"].btn').focus();

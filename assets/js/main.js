@@ -1,5 +1,6 @@
 /* Uygulamayı ayağa kaldırır: rota, olay dinleyicileri, klavye ve açılış bildirimleri. */
 
+import { t } from './i18n.js';
 import { S, ui, save, applyTheme, bootInfo } from './state.js';
 import { start, onChange, go, closeSheet, current, back } from './router.js';
 import { render } from './render.js';
@@ -18,6 +19,11 @@ import { guard, recheck } from './router.js';
 import { softRender } from './render.js';
 
 applyTheme();
+
+// index.html'deki sabit metinler.
+document.querySelector('.skip').textContent = t('İçeriğe geç');
+document.getElementById('shell').setAttribute('aria-label', t('Gezinme paneli'));
+document.getElementById('tabbar').setAttribute('aria-label', t('Ana menü'));
 
 // Süresi dolan sözleşmeleri uzat, güncel kirayı geçmişten oku.
 if (normalizeAll()) save();
@@ -75,15 +81,15 @@ let touchX = null, touchY = null;
 const phone = document.querySelector('.phone');
 
 phone.addEventListener('touchstart', ev => {
-  const t = ev.touches[0];
-  touchX = t.clientX <= 28 ? t.clientX : null;
-  touchY = t.clientY;
+  const tp = ev.touches[0];
+  touchX = tp.clientX <= 28 ? tp.clientX : null;
+  touchY = tp.clientY;
 }, { passive:true });
 
 phone.addEventListener('touchend', ev => {
   if (touchX == null) return;
-  const t = ev.changedTouches[0];
-  const dx = t.clientX - touchX, dy = Math.abs(t.clientY - touchY);
+  const tp = ev.changedTouches[0];
+  const dx = tp.clientX - touchX, dy = Math.abs(tp.clientY - touchY);
   touchX = null;
   if (dx > 70 && dy < 60) back();
 }, { passive:true });
@@ -105,7 +111,7 @@ if (LIVE){
     onData: (info = {}) => {
       if (info.notification){
         const n = info.notification;
-        notify({ title:n.title, body:n.body, icon:'bell', actions: n.go ? [{ label:'Git', run:() => go(n.go) }] : undefined }, false);
+        notify({ title:n.title, body:n.body, icon:'bell', actions: n.go ? [{ label:t('Git'), run:() => go(n.go) }] : undefined }, false);
       }
       if (info.soft) softRender(); else render();
     },
@@ -120,8 +126,8 @@ if (LIVE){
     }
   } catch(e){
     console.error(e);
-    notify({ title:'Sunucuya bağlanılamadı', body: backend.humanError(e), icon:'bell',
-      actions:[{ label:'Tekrar dene', run:() => location.reload() }] }, false);
+    notify({ title:t('Sunucuya bağlanılamadı'), body: backend.humanError(e), icon:'bell',
+      actions:[{ label:t('Tekrar dene'), run:() => location.reload() }] }, false);
   }
   recheck();
 } else {
@@ -129,19 +135,19 @@ if (LIVE){
 }
 
 if (bootInfo.migratedFrom){
-  setTimeout(() => notify({ title:'Verin güncellendi', body:'Kayıtlı verin yeni sürüme taşındı; eski hali yedek olarak saklandı.', icon:'doc' }, false), 400);
+  setTimeout(() => notify({ title:t('Verin güncellendi'), body:t('Kayıtlı verin yeni sürüme taşındı; eski hali yedek olarak saklandı.'), icon:'doc' }, false), 400);
 } else if (bootInfo.newer){
-  setTimeout(() => notify({ title:'Salt okunur mod', body:'Bu veri uygulamanın daha yeni bir sürümüyle kaydedilmiş. Değişiklikler kaydedilmeyecek.', icon:'doc' }, false), 400);
+  setTimeout(() => notify({ title:t('Salt okunur mod'), body:t('Bu veri uygulamanın daha yeni bir sürümüyle kaydedilmiş. Değişiklikler kaydedilmeyecek.'), icon:'doc' }, false), 400);
 }
 
 if (!LIVE && !S.seenHint){
   S.seenHint = true;
   save();
   setTimeout(() => notify({
-    title:'Hoş geldin',
-    body:'Üstteki hapla kiracı ve ev sahibi görünümleri arasında geçebilirsin. Rehberli tur için ayarlara bak.',
+    title:t('Hoş geldin'),
+    body:t('Üstteki hapla kiracı ve ev sahibi görünümleri arasında geçebilirsin. Rehberli tur için ayarlara bak.'),
     icon:'home',
-    actions:[{ label:'Rehberli tur', run:() => A.startTour() }]
+    actions:[{ label:t('Rehberli tur'), run:() => A.startTour() }]
   }, false), 700);
 }
 
@@ -150,6 +156,6 @@ setTimeout(() => {
   const r = reminders()[0];
   if (r) notify({
     title: up(r.t), body:r.b, icon:'bell',
-    actions:[{ label:'Git', run:() => go(r.go) }]
+    actions:[{ label:t('Git'), run:() => go(r.go) }]
   }, false);
 }, 2200);

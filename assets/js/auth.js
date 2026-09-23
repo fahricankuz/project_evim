@@ -3,6 +3,7 @@
    sahibi yalnızca kendi arayüzünü görür. Oturum cihazda saklanır, bir kez
    giriş yapmak yeter. */
 
+import { t } from './i18n.js';
 import { S, ui } from './state.js';
 import { LIVE } from './config.js';
 import { go, current } from './router.js';
@@ -10,6 +11,7 @@ import { notify } from './notify.js';
 import { esc } from './util.js';
 import { ic } from './icons.js';
 import * as backend from './backend.js';
+import { LANGS, getLang } from './i18n.js';
 
 export const AUTH_ROUTES = ['giris', 'kayit', 'sifre', 'yeni-sifre', 'katil', 'davet'];
 const PUBLIC_ROUTES = ['giris', 'kayit', 'sifre', 'katil'];
@@ -55,7 +57,7 @@ export async function onAuthEvent(evt){
   if (evt === 'signed-in' || evt === 'signed-out') ui.signupRole = null;
   if (evt === 'signed-in'){
     try { await backend.openSession(); }
-    catch(e){ notify({ title:'Veriler yüklenemedi', body: backend.humanError(e), icon:'bell' }, false); }
+    catch(e){ notify({ title:t('Veriler yüklenemedi'), body: backend.humanError(e), icon:'bell' }, false); }
     ui.meTenant = backend.live.user?.id;
     await acceptPendingInvite();
     go(home(), { replace:true });
@@ -72,9 +74,9 @@ async function acceptPendingInvite(){
   if (!code || backend.live.profile?.role !== 'tenant') return;
   try {
     await backend.acceptInvite(code);
-    notify({ title:'Eve katıldın', body:'Ev sahibinle artık aynı paneldesiniz.', icon:'home' }, false);
+    notify({ title:t('Eve katıldın'), body:t('Ev sahibinle artık aynı paneldesiniz.'), icon:'home' }, false);
   } catch(e){
-    notify({ title:'Davet kabul edilemedi', body: backend.humanError(e), icon:'home' }, false);
+    notify({ title:t('Davet kabul edilemedi'), body: backend.humanError(e), icon:'home' }, false);
   }
   try { localStorage.removeItem(INVITE_KEY); } catch(e){}
 }
@@ -85,7 +87,7 @@ export async function handleJoinRoute(route){
   try { localStorage.setItem(INVITE_KEY, route.code.toUpperCase()); } catch(e){}
   if (backend.live.user && backend.live.profile){
     if (backend.live.profile.role !== 'tenant'){
-      ui.authMsg = { kind:'error', text:'Davetler kiracı hesapları içindir. Kiracı hesabıyla giriş yapmalısın.' };
+      ui.authMsg = { kind:'error', text:t('Davetler kiracı hesapları içindir. Kiracı hesabıyla giriş yapmalısın.') };
       try { localStorage.removeItem(INVITE_KEY); } catch(e){}
       return;
     }
@@ -98,9 +100,15 @@ export async function handleJoinRoute(route){
 /* Ekranlar                                                            */
 /* ------------------------------------------------------------------ */
 
+/** Giriş ekranlarının altındaki dil bağlantısı. */
+function langLinks(){
+  return '<div class="authalt">' + LANGS.filter(([c]) => c !== getLang())
+    .map(([c, name]) => '<button class="linkbtn" data-act="lang" data-v="'+c+'" lang="'+c+'">'+name+'</button>').join(' ') + '</div>';
+}
+
 function brand(sub){
   return '<div class="authbrand"><div class="mark">'+ic('home', 26)+'</div>' +
-    '<div><div class="authname">Evim</div><div class="muted">'+esc(sub)+'</div></div></div>';
+    ('<div><div class="authname">'+t('Evim')+'</div><div class="muted">')+esc(sub)+'</div></div></div>';
 }
 
 function message(){
@@ -114,6 +122,11 @@ function pendingCode(){
 }
 
 export function authScreen(route){
+  // Her hesap ekranının altına dil bağlantısı eklenir.
+  return screenFor(route).replace(/<\/div>$/, langLinks() + '</div>');
+}
+
+function screenFor(route){
   if (!LIVE) return demoNotice();
   switch (route.auth){
     case 'kayit': return signupScreen();
@@ -126,25 +139,25 @@ export function authScreen(route){
 }
 
 function demoNotice(){
-  return '<div class="auth">' + brand('Demo sürüm') +
-    '<div class="note">Bu sürüm demo modunda çalışıyor: hesap gerekmez, veriler yalnızca bu tarayıcıda saklanır. ' +
-    'Gerçek hesaplar için sunucu kurulumu gerekir (docs/kurulum.md).</div>' +
-    '<button class="btn primary block" data-act="nav" data-go="/kiraci">Demoyu aç</button></div>';
+  return '<div class="auth">' + brand(t('Demo sürüm')) +
+    ('<div class="note">'+t('Bu sürüm demo modunda çalışıyor: hesap gerekmez, veriler yalnızca bu tarayıcıda saklanır.')+' ') +
+    (t('Gerçek hesaplar için sunucu kurulumu gerekir (docs/kurulum.md).')+'</div>') +
+    ('<button class="btn primary block" data-act="nav" data-go="/kiraci">'+t('Demoyu aç')+'</button></div>');
 }
 
 function loginScreen(){
   const code = pendingCode();
-  return '<div class="auth">' + brand('Kira takibi, iki taraf için tek yerde') +
-    '<h1>Giriş yap</h1>' +
-    (code ? '<div class="note">Davet kodun kaydedildi: <b>'+esc(code)+'</b>. Giriş yapınca eve bağlanacaksın.</div>' : '') +
+  return '<div class="auth">' + brand(t('Kira takibi, iki taraf için tek yerde')) +
+    ('<h1>'+t('Giriş yap')+'</h1>') +
+    (code ? ('<div class="note">'+t('Davet kodun kaydedildi:')+' <b>')+esc(code)+('</b>'+t('. Giriş yapınca eve bağlanacaksın.')+'</div>') : '') +
     message() +
     '<form class="stack" data-form="login" novalidate>' +
-      '<label class="field">E-posta<input name="email" type="email" required autocomplete="email" inputmode="email"></label>' +
-      '<label class="field">Şifre<input name="password" type="password" required autocomplete="current-password" minlength="8"></label>' +
-      '<button class="btn primary block">Giriş yap</button>' +
+      ('<label class="field">'+t('E-posta')+'<input name="email" type="email" required autocomplete="email" inputmode="email"></label>') +
+      ('<label class="field">'+t('Şifre')+'<input name="password" type="password" required autocomplete="current-password" minlength="8"></label>') +
+      ('<button class="btn primary block">'+t('Giriş yap')+'</button>') +
     '</form>' +
-    '<button class="linkbtn" data-act="nav" data-go="/sifre">Şifremi unuttum</button>' +
-    '<div class="authalt">Hesabın yok mu? <button class="linkbtn" data-act="nav" data-go="/kayit">Kayıt ol</button></div>' +
+    ('<button class="linkbtn" data-act="nav" data-go="/sifre">'+t('Şifremi unuttum')+'</button>') +
+    ('<div class="authalt">'+t('Hesabın yok mu?')+' <button class="linkbtn" data-act="nav" data-go="/kayit">'+t('Kayıt ol')+'</button></div>') +
   '</div>';
 }
 
@@ -155,69 +168,69 @@ function signupScreen(){
     '<label class="rolecard'+(role === v ? ' on' : '')+(code && v !== 'tenant' ? ' off' : '')+'">' +
       '<input type="radio" name="role" value="'+v+'"'+(role === v ? ' checked' : '')+(code && v !== 'tenant' ? ' disabled' : '')+' data-input="signupRole">' +
       '<b>'+title+'</b><span class="muted">'+sub+'</span></label>';
-  return '<div class="auth">' + brand('Hesap oluştur') +
-    '<h1>Kayıt ol</h1>' +
-    (code ? '<div class="note">Davet kodu <b>'+esc(code)+'</b> ile kiracı hesabı açıyorsun. Kayıttan sonra eve otomatik bağlanacaksın.</div>' : '') +
+  return '<div class="auth">' + brand(t('Hesap oluştur')) +
+    ('<h1>'+t('Kayıt ol')+'</h1>') +
+    (code ? ('<div class="note">'+t('Davet kodu')+' <b>')+esc(code)+('</b> '+t('ile kiracı hesabı açıyorsun. Kayıttan sonra eve otomatik bağlanacaksın.')+'</div>') : '') +
     message() +
     '<form class="stack" data-form="signup" novalidate>' +
-      '<fieldset class="roles"><legend class="label">Hesap türü</legend>' +
-        card('tenant', 'Kiracıyım', 'Kiramı öder, taleplerimi takip ederim') +
-        card('landlord', 'Ev sahibiyim', 'Evlerimi ve kiracılarımı yönetirim') +
+      ('<fieldset class="roles"><legend class="label">'+t('Hesap türü')+'</legend>') +
+        card('tenant', t('Kiracıyım'), t('Kiramı öder, taleplerimi takip ederim')) +
+        card('landlord', t('Ev sahibiyim'), t('Evlerimi ve kiracılarımı yönetirim')) +
       '</fieldset>' +
-      '<label class="field">Ad soyad<input name="name" required autocomplete="name" maxlength="60"></label>' +
-      '<label class="field">E-posta<input name="email" type="email" required autocomplete="email" inputmode="email"></label>' +
-      '<label class="field">Şifre<input name="password" type="password" required autocomplete="new-password" minlength="8" aria-describedby="pwHint"></label>' +
-      '<div class="muted" id="pwHint" style="margin-top:-6px">En az 8 karakter.</div>' +
-      '<label class="check"><input type="checkbox" name="consent" required> <span>Kişisel verilerimin kira ilişkisinin yürütülmesi amacıyla işlenmesini, kira ilişkisinin karşı tarafıyla paylaşılmasını ve yurt dışındaki sunucularda saklanmasını kabul ediyorum (KVKK).</span></label>' +
-      '<button class="btn primary block">Hesap oluştur</button>' +
+      ('<label class="field">'+t('Ad soyad')+'<input name="name" required autocomplete="name" maxlength="60"></label>') +
+      ('<label class="field">'+t('E-posta')+'<input name="email" type="email" required autocomplete="email" inputmode="email"></label>') +
+      ('<label class="field">'+t('Şifre')+'<input name="password" type="password" required autocomplete="new-password" minlength="8" aria-describedby="pwHint"></label>') +
+      ('<div class="muted" id="pwHint" style="margin-top:-6px">'+t('En az 8 karakter.')+'</div>') +
+      ('<label class="check"><input type="checkbox" name="consent" required> <span>'+t('Kişisel verilerimin kira ilişkisinin yürütülmesi amacıyla işlenmesini, kira ilişkisinin karşı tarafıyla paylaşılmasını ve yurt dışındaki sunucularda saklanmasını kabul ediyorum (KVKK).')+'</span></label>') +
+      ('<button class="btn primary block">'+t('Hesap oluştur')+'</button>') +
     '</form>' +
-    '<div class="authalt">Hesabın var mı? <button class="linkbtn" data-act="nav" data-go="/giris">Giriş yap</button></div>' +
+    ('<div class="authalt">'+t('Hesabın var mı?')+' <button class="linkbtn" data-act="nav" data-go="/giris">'+t('Giriş yap')+'</button></div>') +
   '</div>';
 }
 
 function forgotScreen(){
-  return '<div class="auth">' + brand('Şifre sıfırlama') +
-    '<h1>Şifreni mi unuttun?</h1>' +
-    '<p class="muted">E-posta adresini yaz; şifreni yenilemen için bir bağlantı gönderelim.</p>' +
+  return '<div class="auth">' + brand(t('Şifre sıfırlama')) +
+    ('<h1>'+t('Şifreni mi unuttun?')+'</h1>') +
+    ('<p class="muted">'+t('E-posta adresini yaz; şifreni yenilemen için bir bağlantı gönderelim.')+'</p>') +
     message() +
     '<form class="stack" data-form="forgot" novalidate>' +
-      '<label class="field">E-posta<input name="email" type="email" required autocomplete="email" inputmode="email"></label>' +
-      '<button class="btn primary block">Bağlantı gönder</button>' +
+      ('<label class="field">'+t('E-posta')+'<input name="email" type="email" required autocomplete="email" inputmode="email"></label>') +
+      ('<button class="btn primary block">'+t('Bağlantı gönder')+'</button>') +
     '</form>' +
-    '<button class="linkbtn" data-act="nav" data-go="/giris">Girişe dön</button></div>';
+    ('<button class="linkbtn" data-act="nav" data-go="/giris">'+t('Girişe dön')+'</button></div>');
 }
 
 function newPasswordScreen(){
-  return '<div class="auth">' + brand('Yeni şifre') +
-    '<h1>Yeni şifreni belirle</h1>' + message() +
+  return '<div class="auth">' + brand(t('Yeni şifre')) +
+    ('<h1>'+t('Yeni şifreni belirle')+'</h1>') + message() +
     '<form class="stack" data-form="newpass" novalidate>' +
-      '<label class="field">Yeni şifre<input name="password" type="password" required autocomplete="new-password" minlength="8"></label>' +
-      '<label class="field">Yeni şifre (tekrar)<input name="password2" type="password" required autocomplete="new-password" minlength="8"></label>' +
-      '<button class="btn primary block">Kaydet</button>' +
+      ('<label class="field">'+t('Yeni şifre')+'<input name="password" type="password" required autocomplete="new-password" minlength="8"></label>') +
+      ('<label class="field">'+t('Yeni şifre (tekrar)')+'<input name="password2" type="password" required autocomplete="new-password" minlength="8"></label>') +
+      ('<button class="btn primary block">'+t('Kaydet')+'</button>') +
     '</form></div>';
 }
 
 function joinScreen(route){
   const code = (route.code || '').toUpperCase();
-  return '<div class="auth">' + brand('Davet') +
-    '<h1>Evine davet edildin</h1>' +
-    '<p class="muted">Ev sahibin seni Evim’e davet etti. Hesabını oluştur ya da giriş yap; evine otomatik bağlanacaksın.</p>' +
+  return '<div class="auth">' + brand(t('Davet')) +
+    ('<h1>'+t('Evine davet edildin')+'</h1>') +
+    ('<p class="muted">'+t('Ev sahibin seni Evim’e davet etti. Hesabını oluştur ya da giriş yap; evine otomatik bağlanacaksın.')+'</p>') +
     '<div class="codebox">'+esc(code)+'</div>' + message() +
-    '<button class="btn primary block" data-act="nav" data-go="/kayit">Kiracı hesabı oluştur</button>' +
-    '<button class="btn ghost block" data-act="nav" data-go="/giris">Hesabım var, giriş yap</button></div>';
+    ('<button class="btn primary block" data-act="nav" data-go="/kayit">'+t('Kiracı hesabı oluştur')+'</button>') +
+    ('<button class="btn ghost block" data-act="nav" data-go="/giris">'+t('Hesabım var, giriş yap')+'</button></div>');
 }
 
 function inviteCodeScreen(){
   const name = backend.live.profile?.name || '';
-  return '<div class="auth">' + brand(name ? 'Merhaba ' + name : 'Hoş geldin') +
-    '<h1>Evine bağlan</h1>' +
-    '<p class="muted">Ev sahibinden aldığın davet kodunu gir. Kodu ev sahibin Evim’de “Kiracı ekle” ile oluşturur.</p>' +
+  return '<div class="auth">' + brand(name ? (t('Merhaba')+' ') + name : t('Hoş geldin')) +
+    ('<h1>'+t('Evine bağlan')+'</h1>') +
+    ('<p class="muted">'+t('Ev sahibinden aldığın davet kodunu gir. Kodu ev sahibin Evim’de “Kiracı ekle” ile oluşturur.')+'</p>') +
     message() +
     '<form class="stack" data-form="join" novalidate>' +
-      '<label class="field">Davet kodu<input name="code" required autocomplete="one-time-code" autocapitalize="characters" maxlength="12" style="text-transform:uppercase;letter-spacing:.12em;font-weight:800"></label>' +
-      '<button class="btn primary block">Eve bağlan</button>' +
+      ('<label class="field">'+t('Davet kodu')+'<input name="code" required autocomplete="one-time-code" autocapitalize="characters" maxlength="12" style="text-transform:uppercase;letter-spacing:.12em;font-weight:800"></label>') +
+      ('<button class="btn primary block">'+t('Eve bağlan')+'</button>') +
     '</form>' +
-    '<button class="linkbtn" data-act="signOut">Çıkış yap</button></div>';
+    ('<button class="linkbtn" data-act="signOut">'+t('Çıkış yap')+'</button></div>');
 }
 
 /* ------------------------------------------------------------------ */
@@ -229,7 +242,7 @@ export const AUTH_FORMS = ['login', 'signup', 'forgot', 'newpass', 'join', 'prof
 function busy(form, on, label){
   const b = form.querySelector('button:not([type=button]):not(.linkbtn)');
   if (!b) return;
-  if (on){ b.dataset.label = b.textContent; b.disabled = true; b.textContent = label || 'Bekle…'; }
+  if (on){ b.dataset.label = b.textContent; b.disabled = true; b.textContent = label || t('Bekle…'); }
   else { b.disabled = false; if (b.dataset.label) b.textContent = b.dataset.label; }
 }
 
@@ -263,8 +276,8 @@ export async function authSubmit(type, fd, form){
   ui.authMsg = null;
 
   if (type === 'login'){
-    if (!email || !password) return fail('E-posta ve şifreni gir.', form);
-    busy(form, true, 'Giriş yapılıyor…');
+    if (!email || !password) return fail(t('E-posta ve şifreni gir.'), form);
+    busy(form, true, t('Giriş yapılıyor…'));
     try { await backend.signIn({ email, password }); }
     catch(e){ return fail(backend.humanError(e), form); }
     return;   // gerisini oturum olayı yürütür
@@ -273,15 +286,15 @@ export async function authSubmit(type, fd, form){
   if (type === 'signup'){
     const name = String(fd.get('name') || '').trim();
     const role = pendingCode() ? 'tenant' : String(fd.get('role') || 'tenant');
-    if (!name) return fail('Adını yaz.', form);
-    if (!/^\S+@\S+\.\S+$/.test(email)) return fail('Geçerli bir e-posta adresi yaz.', form);
-    if (password.length < 8) return fail('Şifre en az 8 karakter olmalı.', form);
-    if (!fd.get('consent')) return fail('Devam etmek için KVKK onayını işaretle.', form);
-    busy(form, true, 'Hesap oluşturuluyor…');
+    if (!name) return fail(t('Adını yaz.'), form);
+    if (!/^\S+@\S+\.\S+$/.test(email)) return fail(t('Geçerli bir e-posta adresi yaz.'), form);
+    if (password.length < 8) return fail(t('Şifre en az 8 karakter olmalı.'), form);
+    if (!fd.get('consent')) return fail(t('Devam etmek için KVKK onayını işaretle.'), form);
+    busy(form, true, t('Hesap oluşturuluyor…'));
     try {
       const { needsConfirm } = await backend.signUp({ name, email, password, role });
       if (needsConfirm){
-        ui.authMsg = { kind:'info', text: email + ' adresine bir doğrulama bağlantısı gönderdik. Bağlantıya tıkladıktan sonra giriş yapabilirsin.' };
+        ui.authMsg = { kind:'info', text: email + (' '+t('adresine bir doğrulama bağlantısı gönderdik. Bağlantıya tıkladıktan sonra giriş yapabilirsin.')) };
         go('/giris', { replace:true });
         rerender();
       }
@@ -290,23 +303,23 @@ export async function authSubmit(type, fd, form){
   }
 
   if (type === 'forgot'){
-    if (!/^\S+@\S+\.\S+$/.test(email)) return fail('Geçerli bir e-posta adresi yaz.', form);
-    busy(form, true, 'Gönderiliyor…');
+    if (!/^\S+@\S+\.\S+$/.test(email)) return fail(t('Geçerli bir e-posta adresi yaz.'), form);
+    busy(form, true, t('Gönderiliyor…'));
     try {
       await backend.resetPassword(email);
-      ui.authMsg = { kind:'info', text:'Bir hesap varsa '+email+' adresine sıfırlama bağlantısı gönderildi.' };
+      ui.authMsg = { kind:'info', text:(t('Bir hesap varsa')+' ')+email+(' '+t('adresine sıfırlama bağlantısı gönderildi.')) };
       rerender();
     } catch(e){ fail(backend.humanError(e), form); }
     return;
   }
 
   if (type === 'newpass'){
-    if (password.length < 8) return fail('Şifre en az 8 karakter olmalı.', form);
-    if (password !== String(fd.get('password2') || '')) return fail('Şifreler aynı değil.', form);
-    busy(form, true, 'Kaydediliyor…');
+    if (password.length < 8) return fail(t('Şifre en az 8 karakter olmalı.'), form);
+    if (password !== String(fd.get('password2') || '')) return fail(t('Şifreler aynı değil.'), form);
+    busy(form, true, t('Kaydediliyor…'));
     try {
       await backend.updatePassword(password);
-      notify({ title:'Şifre güncellendi', body:'Yeni şifrenle giriş yapabilirsin.', icon:'key' }, false);
+      notify({ title:t('Şifre güncellendi'), body:t('Yeni şifrenle giriş yapabilirsin.'), icon:'key' }, false);
       if (current().auth === 'yeni-sifre') go(home(), { replace:true });
       else rerender();
     } catch(e){ fail(backend.humanError(e), form); }
@@ -315,12 +328,12 @@ export async function authSubmit(type, fd, form){
 
   if (type === 'join'){
     const code = String(fd.get('code') || '').trim().toUpperCase();
-    if (!code) return fail('Davet kodunu gir.', form);
-    busy(form, true, 'Bağlanılıyor…');
+    if (!code) return fail(t('Davet kodunu gir.'), form);
+    busy(form, true, t('Bağlanılıyor…'));
     try {
       await backend.acceptInvite(code);
       ui.meTenant = backend.live.user?.id;
-      notify({ title:'Eve katıldın', body:'Ev sahibinle artık aynı paneldesiniz.', icon:'home' }, false);
+      notify({ title:t('Eve katıldın'), body:t('Ev sahibinle artık aynı paneldesiniz.'), icon:'home' }, false);
       go(home(), { replace:true });
     } catch(e){ fail(backend.humanError(e), form); }
     return;
@@ -329,11 +342,11 @@ export async function authSubmit(type, fd, form){
   if (type === 'profile'){
     const name = String(fd.get('name') || '').trim();
     const phone = String(fd.get('phone') || '').trim();
-    if (!name) return fail('Adını yaz.', form);
-    busy(form, true, 'Kaydediliyor…');
+    if (!name) return fail(t('Adını yaz.'), form);
+    busy(form, true, t('Kaydediliyor…'));
     try {
       await backend.updateProfile({ name, phone });
-      notify({ title:'Kaydedildi', body:'Profil bilgilerin güncellendi.', icon:'home' }, false);
+      notify({ title:t('Kaydedildi'), body:t('Profil bilgilerin güncellendi.'), icon:'home' }, false);
       busy(form, false);
       rerender();
     } catch(e){ fail(backend.humanError(e), form); }
@@ -348,15 +361,15 @@ export const AUTH_ACTIONS = {
   deleteAccount: async () => {
     const { ask } = await import('./confirm.js');
     if (!await ask({
-      title:'Hesabın silinsin mi?',
-      body:'Hesabın ve sahibi olduğun evlerin tüm kayıtları kalıcı olarak silinir. Bu işlem geri alınamaz.',
-      ok:'Hesabı sil', danger:true
+      title:t('Hesabın silinsin mi?'),
+      body:t('Hesabın ve sahibi olduğun evlerin tüm kayıtları kalıcı olarak silinir. Bu işlem geri alınamaz.'),
+      ok:t('Hesabı sil'), danger:true
     })) return;
     try {
       await backend.deleteAccount();
       go('/giris', { replace:true });
-      notify({ title:'Hesabın silindi', body:'Tüm verilerin kaldırıldı.', icon:'home' }, false);
-    } catch(e){ notify({ title:'Silinemedi', body: backend.humanError(e), icon:'home' }, false); }
+      notify({ title:t('Hesabın silindi'), body:t('Tüm verilerin kaldırıldı.'), icon:'home' }, false);
+    } catch(e){ notify({ title:t('Silinemedi'), body: backend.humanError(e), icon:'home' }, false); }
   },
   togglePush: async () => {
     try {
@@ -364,9 +377,9 @@ export const AUTH_ACTIONS = {
       if (st === 'on') await backend.disablePush();
       else if (st === 'off') {
         const ok = await backend.enablePush();
-        if (!ok) notify({ title:'İzin verilmedi', body:'Bildirim izni tarayıcı ayarlarından açılabilir.', icon:'bell' }, false);
+        if (!ok) notify({ title:t('İzin verilmedi'), body:t('Bildirim izni tarayıcı ayarlarından açılabilir.'), icon:'bell' }, false);
       }
-    } catch(e){ notify({ title:'Bildirimler açılamadı', body: backend.humanError(e), icon:'bell' }, false); }
+    } catch(e){ notify({ title:t('Bildirimler açılamadı'), body: backend.humanError(e), icon:'bell' }, false); }
     ui.pushState = await backend.pushState().catch(() => 'unsupported');
     rerender();
   }

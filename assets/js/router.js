@@ -2,6 +2,7 @@
    Her ekranın bir adresi var; geri/ileri, yenileme ve derin link çalışır.
    Örnek: #/ev-sahibi/ev/moda/odeme?s=dekont&key=2026-09 */
 
+import { t } from './i18n.js';
 import { S, ui } from './state.js';
 
 /** Hesap ekranları (giriş, kayıt…) — rol sekmelerinin dışında. */
@@ -32,7 +33,7 @@ const LANDLORD_TABS = {
 export const TENANT_PATH = { panel:'/kiraci', pay:'/kiraci/odemeler', req:'/kiraci/talepler', msg:'/kiraci/mesajlar', docs:'/kiraci/belgeler', agenda:'/kiraci/takvim' };
 export const LANDLORD_PATH = { portfolio:'/ev-sahibi', lreq:'/ev-sahibi/talepler', lmsg:'/ev-sahibi/mesajlar', report:'/ev-sahibi/rapor', agenda:'/ev-sahibi/takvim' };
 
-export const PROP_SUBS = [['ozet','Özet'],['odeme','Ödemeler'],['talep','Talepler'],['mesaj','Mesajlar'],['belge','Belgeler'],['tutanak','Tutanak'],['gider','Giderler']];
+export const PROP_SUBS = [['ozet',t('Özet')],['odeme',t('Ödemeler')],['talep',t('Talepler')],['mesaj',t('Mesajlar')],['belge',t('Belgeler')],['tutanak',t('Tutanak')],['gider',t('Giderler')]];
 /** Şeritte görünmeyen ama adresle açılan bölümler. */
 const EXTRA_SUBS = ['cikis'];
 
@@ -176,22 +177,22 @@ export function start(){
 /** Ekran haritası — masaüstü gezinme panelinde ve harita sheet'inde kullanılır. */
 export function screenMap(){
   const tenant = [
-    { label:'Panel', path:'/kiraci', icon:'home' },
-    { label:'Ödemeler', path:'/kiraci/odemeler', icon:'card' },
-    { label:'Talepler', path:'/kiraci/talepler', icon:'wrench' },
-    { label:'Mesajlar', path:'/kiraci/mesajlar', icon:'chat' },
-    { label:'Belgeler', path:'/kiraci/belgeler', icon:'doc' },
-    { label:'Giriş tutanağı', path:'/kiraci/belgeler/tutanak', icon:'key', depth:1 },
-    { label:'Çıkış ve depozito', path:'/kiraci/belgeler/cikis', icon:'key', depth:1 },
-    { label:'Takvim', path:'/kiraci/takvim', icon:'calendar' }
+    { label:t('Panel'), path:'/kiraci', icon:'home' },
+    { label:t('Ödemeler'), path:'/kiraci/odemeler', icon:'card' },
+    { label:t('Talepler'), path:'/kiraci/talepler', icon:'wrench' },
+    { label:t('Mesajlar'), path:'/kiraci/mesajlar', icon:'chat' },
+    { label:t('Belgeler'), path:'/kiraci/belgeler', icon:'doc' },
+    { label:t('Giriş tutanağı'), path:'/kiraci/belgeler/tutanak', icon:'key', depth:1 },
+    { label:t('Çıkış ve depozito'), path:'/kiraci/belgeler/cikis', icon:'key', depth:1 },
+    { label:t('Takvim'), path:'/kiraci/takvim', icon:'calendar' }
   ];
   const landlord = [
-    { label:'Portföy', path:'/ev-sahibi', icon:'grid' },
+    { label:t('Portföy'), path:'/ev-sahibi', icon:'grid' },
     ...S.order.map(id => ({ label:S.props[id].name, path:'/ev-sahibi/ev/'+id, icon:'home', depth:1 })),
-    { label:'Tüm talepler', path:'/ev-sahibi/talepler', icon:'wrench' },
-    { label:'Mesajlar', path:'/ev-sahibi/mesajlar', icon:'chat' },
-    { label:'Takvim', path:'/ev-sahibi/takvim', icon:'calendar' },
-    { label:'Rapor', path:'/ev-sahibi/rapor', icon:'chart' }
+    { label:t('Tüm talepler'), path:'/ev-sahibi/talepler', icon:'wrench' },
+    { label:t('Mesajlar'), path:'/ev-sahibi/mesajlar', icon:'chat' },
+    { label:t('Takvim'), path:'/ev-sahibi/takvim', icon:'calendar' },
+    { label:t('Rapor'), path:'/ev-sahibi/rapor', icon:'chart' }
   ];
   return { tenant, landlord };
 }

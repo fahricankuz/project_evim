@@ -19,6 +19,8 @@ const SHELL = [
   './assets/js/backend.js',
   './assets/js/config.js',
   './assets/js/confirm.js',
+  './assets/js/en.js',
+  './assets/js/i18n.js',
   './assets/js/icons.js',
   './assets/js/logic.js',
   './assets/js/main.js',

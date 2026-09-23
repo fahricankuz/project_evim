@@ -1,5 +1,6 @@
 /* Türetilmiş veriler: dönem hesabı, hatırlatmalar, raporlar, arama. */
 
+import { t } from './i18n.js';
 import { S, ui, STEPS } from './state.js';
 import { t0, iso, add, addM, mkey, between, daysTo, parse, fmt, fmtFull, monthName, monthYear, tl, match } from './util.js';
 
@@ -7,12 +8,12 @@ export function P(id){ return S.props[id]; }
 export function role(){ return ui.role; }
 
 export const ST = {
-  approved:['Ödendi','ok'],
-  review:['Onay bekliyor','wait'],
-  partial:['Kısmi ödeme','wait'],
-  rejected:['Dekont reddedildi','bad'],
-  pending:['Bekliyor',''],
-  late:['Gecikti','bad']
+  approved:[t('Ödendi'),'ok'],
+  review:[t('Onay bekliyor'),'wait'],
+  partial:[t('Kısmi ödeme'),'wait'],
+  rejected:[t('Dekont reddedildi'),'bad'],
+  pending:[t('Bekliyor'),''],
+  late:[t('Gecikti'),'bad']
 };
 
 export function chip(st){
@@ -39,10 +40,10 @@ export function dueDate(p, key){
  * hepsi kapalıysa gelecek ay. Böylece geçmiş bir gecikme gözden kaçmaz.
  */
 export function period(p){
-  const t = t0(), cur = mkey(t);
+  const today = t0(), cur = mkey(today);
   // Sözleşme başından tara; çok eski kayıtlarda 24 ayla sınırla.
-  const start = p.startDate ? parse(p.startDate) : addM(t, -11);
-  let cursor = new Date(Math.max(start.getTime(), addM(t, -24).getTime()));
+  const start = p.startDate ? parse(p.startDate) : addM(today, -11);
+  let cursor = new Date(Math.max(start.getTime(), addM(today, -24).getTime()));
   cursor = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
 
   while (mkey(cursor) <= cur){
@@ -53,7 +54,7 @@ export function period(p){
     }
     cursor = addM(cursor, 1);
   }
-  const nx = addM(new Date(t.getFullYear(), t.getMonth(), 1), 1), nk = mkey(nx);
+  const nx = addM(new Date(today.getFullYear(), today.getMonth(), 1), 1), nk = mkey(nx);
   return { key: nk, due: dueDate(p, nk), status: statusOf(p, nk), rec: p.pay[nk] };
 }
 
@@ -83,7 +84,7 @@ export function remaining(p, key){
  * Çıkışta depozitodan düşülecek kalemi önermek için kullanılır.
  */
 export function unpaid(p){
-  const t = t0(), cur = mkey(t);
+  const today = t0(), cur = mkey(today);
   let c = parse(p.startDate);
   c = new Date(c.getFullYear(), c.getMonth(), 1);
   const months = [];
@@ -128,22 +129,22 @@ export function normalizeAll(){
 /* ---- kiracılar ---- */
 
 export function tenantsLabel(p){
-  const names = (p.tenants || []).map(t => t.name);
-  if (!names.length) return 'Kiracı yok';
+  const names = (p.tenants || []).map(x => x.name);
+  if (!names.length) return t('Kiracı yok');
   if (names.length === 1) return names[0];
-  return names.slice(0, -1).join(', ') + ' ve ' + names[names.length - 1];
+  return names.slice(0, -1).join(', ') + ' ' + t('ve') + ' ' + names[names.length - 1];
 }
 
 /** Demo'da kiracı görünümü evin ilk kiracısı olarak açılır; gerçek hesapta oturum sahibidir. */
 export function meTenant(p){
-  const id = ui.meTenant && p.tenants.some(t => t.id === ui.meTenant) ? ui.meTenant : p.tenants[0]?.id;
-  return p.tenants.find(t => t.id === id) || null;
+  const id = ui.meTenant && p.tenants.some(x => x.id === ui.meTenant) ? ui.meTenant : p.tenants[0]?.id;
+  return p.tenants.find(x => x.id === id) || null;
 }
 
 export function senderName(p, m){
   if (m.from === 'landlord') return p.landlord.name;
-  if (m.from === 'system') return 'Sistem';
-  return (p.tenants.find(t => t.id === m.by) || p.tenants[0] || { name:'Kiracı' }).name;
+  if (m.from === 'system') return t('Sistem');
+  return (p.tenants.find(x => x.id === m.by) || p.tenants[0] || { name:'Kiracı' }).name;
 }
 
 /* ---- giderler ---- */
@@ -173,7 +174,7 @@ export function otherPerson(p){
   if (ui.role === 'tenant') return p.landlord;
   return { name: tenantsLabel(p), phone: p.tenants[0]?.phone || '' };
 }
-export function otherLabel(){ return ui.role === 'tenant' ? 'Ev sahibi' : 'Kiracı'; }
+export function otherLabel(){ return ui.role === 'tenant' ? t('Ev sahibi') : t('Kiracı'); }
 
 /** Bu ayın tahsilat tablosu — portföy kartındaki oranın kaynağı. */
 export function monthCollection(){
@@ -247,43 +248,44 @@ export function dataYears(){
 export function agendaItems(p){
   const items = [];
   openReqs(p).forEach(r => items.push({
-    kind:'req', title:r.title, sub:r.cat+' · '+STEPS[r.status],
+    kind:'req', title:r.title, sub:t(r.cat)+' · '+t(STEPS[r.status]),
     go:'/'+(ui.role==='tenant' ? 'kiraci/talepler/'+r.id : 'ev-sahibi/ev/'+p.id+'/talep?req='+r.id),
-    chip:'Talep', cls:'acc'
+    chip:t('Talep'), cls:'acc'
   }));
   const per = period(p);
   if (per.status !== 'approved') items.push({
-    kind:'pay', title: monthYear(per.key)+' kirası', sub:'Vade '+fmtFull(per.due),
+    kind:'pay', title: monthYear(per.key)+(' '+t('kirası')), sub: t('Vade {date}', { date:fmtFull(per.due) }),
     go:'/'+(ui.role==='tenant' ? 'kiraci/odemeler' : 'ev-sahibi/ev/'+p.id+'/odeme'),
-    chip: between(t0(), per.due) + ' gün', days: between(t0(), per.due)
+    chip: between(t0(), per.due) + (' '+t('gün')), days: between(t0(), per.due)
   });
   items.push({
-    kind:'contract', title:'Sözleşme yenileme', sub: fmtFull(parse(p.contractEnd)),
+    kind:'contract', title:t('Sözleşme yenileme'), sub: fmtFull(parse(p.contractEnd)),
     go:'/'+(ui.role==='tenant' ? 'kiraci/odemeler' : 'ev-sahibi/ev/'+p.id+'/odeme'),
-    chip: daysTo(p.contractEnd)+' gün', days: daysTo(p.contractEnd)
+    chip: t('{n} gün', { n:daysTo(p.contractEnd) }), days: daysTo(p.contractEnd)
   });
   items.push({
-    kind:'dask', title:'DASK poliçesi', sub:'Bitiş '+fmtFull(parse(p.dask)),
+    kind:'dask', title:t('DASK poliçesi'), sub: t('Bitiş {date}', { date:fmtFull(parse(p.dask)) }),
     go:'/'+(ui.role==='tenant' ? 'kiraci/belgeler' : 'ev-sahibi/ev/'+p.id+'/belge'),
-    chip: daysTo(p.dask)+' gün', days: daysTo(p.dask)
+    chip: t('{n} gün', { n:daysTo(p.dask) }), days: daysTo(p.dask)
   });
   if (p.moveOut && !p.moveOut.refunded){
     const done = p.moveOut.tenantOk && p.moveOut.landlordOk;
     items.push({
-      kind:'moveout', title:'Çıkış ve depozito iadesi',
-      sub: done ? 'İki taraf onayladı · iade bekleniyor' : 'Onay bekleniyor',
+      kind:'moveout', title:t('Çıkış ve depozito iadesi'),
+      sub: done ? t('İki taraf onayladı · iade bekleniyor') : t('Onay bekleniyor'),
       go: ui.role === 'tenant' ? '/kiraci/belgeler/cikis' : '/ev-sahibi/ev/'+p.id+'/cikis',
-      chip: p.moveOut.date ? daysTo(p.moveOut.date)+' gün' : 'Süreçte',
+      chip: p.moveOut.date ? t('{n} gün', { n:daysTo(p.moveOut.date) }) : t('Süreçte'),
       days: p.moveOut.date ? daysTo(p.moveOut.date) : null, cls:'acc'
     });
   }
   p.docs.forEach(d => {
-    if (!d.until) return;
+    // DASK poliçesinin bitişi yukarıdaki DASK satırında zaten var.
+    if (!d.until || d.cat === 'DASK poliçesi') return;
     items.push({
-      kind:'doc', title:d.cat,
-      sub:(d.cat === 'Tahliye taahhütnamesi' ? 'Tahliye ' : 'Bitiş ') + fmtFull(parse(d.until)),
+      kind:'doc', title:t(d.cat),
+      sub: d.cat === 'Tahliye taahhütnamesi' ? t('Tahliye {date}', { date:fmtFull(parse(d.until)) }) : t('Bitiş {date}', { date:fmtFull(parse(d.until)) }),
       go:'/'+(ui.role==='tenant' ? 'kiraci/belgeler' : 'ev-sahibi/ev/'+p.id+'/belge'),
-      chip: daysTo(d.until)+' gün', days: daysTo(d.until)
+      chip: t('{n} gün', { n:daysTo(d.until) }), days: daysTo(d.until)
     });
   });
   return items;
@@ -304,47 +306,49 @@ export function reminders(){
 
     if (ui.role === 'tenant'){
       if ((per.status === 'pending') && dd <= s.rentDays)
-        out.push({ t:'Kira günü yaklaşıyor', b: monthYear(per.key)+' kirası '+(dd===0?'bugün':dd+' gün sonra')+' ödenmeli.', go:payGo, w:1 });
+        out.push({ t:t('Kira günü yaklaşıyor'), b: dd === 0
+          ? t('{month} kirası bugün ödenmeli.', { month: monthYear(per.key) })
+          : t('{month} kirası {n} gün sonra ödenmeli.', { month: monthYear(per.key), n: dd }), go:payGo, w:1 });
       if (per.status === 'late')
-        out.push({ t:'Kira gecikti', b: monthYear(per.key)+' kirası için dekont yüklenmedi ('+(-dd)+' gün).', go:payGo, w:2 });
+        out.push({ t:t('Kira gecikti'), b: t('{month} kirası için dekont yüklenmedi ({n} gün).', { month: monthYear(per.key), n: -dd }), go:payGo, w:2 });
       if (per.status === 'partial')
-        out.push({ t:'Kısmi ödeme', b: monthYear(per.key)+' için '+tl(remaining(p, per.key))+' bakiye görünüyor.', go:payGo, w:2 });
+        out.push({ t:t('Kısmi ödeme'), b: t('{month} için {amount} bakiye görünüyor.', { month: monthYear(per.key), amount: tl(remaining(p, per.key)) }), go:payGo, w:2 });
       if (per.status === 'rejected')
-        out.push({ t:'Dekont reddedildi', b:(per.rec?.rejectReason || 'Ev sahibi dekontu onaylamadı.'), go:payGo, w:2 });
+        out.push({ t:t('Dekont reddedildi'), b:(per.rec?.rejectReason || t('Ev sahibi dekontu onaylamadı.')), go:payGo, w:2 });
       if (p.renewal && p.renewal.status === 'sent')
-        out.push({ t:'Yenileme teklifi bekliyor', b: tl(p.renewal.amount)+' önerildi; yanıtını bekliyor.', go:payGo, w:2 });
+        out.push({ t:t('Yenileme teklifi bekliyor'), b: tl(p.renewal.amount)+(' '+t('önerildi; yanıtını bekliyor.')), go:payGo, w:2 });
     } else {
       if (per.status === 'review')
-        out.push({ t:pre+'dekont onayı bekliyor', b: monthYear(per.key)+' kirası için dekont yüklendi.', go:payGo, w:2 });
+        out.push({ t:pre+t('dekont onayı bekliyor'), b: monthYear(per.key)+(' '+t('kirası için dekont yüklendi.')), go:payGo, w:2 });
       if (per.status === 'partial')
-        out.push({ t:pre+'kısmi ödeme', b: monthYear(per.key)+' için '+tl(remaining(p, per.key))+' eksik.', go:payGo, w:2 });
+        out.push({ t:pre+t('kısmi ödeme'), b: t('{month} için {amount} eksik.', { month: monthYear(per.key), amount: tl(remaining(p, per.key)) }), go:payGo, w:2 });
       if (per.status === 'late')
-        out.push({ t:pre+'kira gecikti', b: monthYear(per.key)+' kirası '+(-dd)+' gündür ödenmedi.', go:payGo, w:2 });
+        out.push({ t:pre+t('kira gecikti'), b: t('{month} kirası {n} gündür ödenmedi.', { month: monthYear(per.key), n: -dd }), go:payGo, w:2 });
       if (newReqs(p).length)
-        out.push({ t:pre+'yeni talep', b: newReqs(p).length+' talep yanıt bekliyor.', go:'/ev-sahibi/ev/'+id+'/talep', w:1 });
+        out.push({ t:pre+t('yeni talep'), b: t('{n} talep yanıt bekliyor.', { n: newReqs(p).length }), go:'/ev-sahibi/ev/'+id+'/talep', w:1 });
       if (daysTo(p.dask) <= s.insDays)
-        out.push({ t:pre+'DASK yenileme', b:'Poliçe '+fmtFull(parse(p.dask))+' tarihinde bitiyor.', go:docGo, w:2 });
+        out.push({ t:pre+t('DASK yenileme'), b: t('Poliçe {date} tarihinde bitiyor.', { date: fmtFull(parse(p.dask)) }), go:docGo, w:2 });
     }
 
     const rd = daysTo(p.contractEnd);
     if (rd <= s.renewDays && !(p.renewal && p.renewal.status === 'accepted'))
-      out.push({ t:pre+'sözleşme yenileme', b: fmtFull(parse(p.contractEnd))+' · '+rd+' gün kaldı', go:payGo, w: rd <= 30 ? 2 : 1 });
+      out.push({ t:pre+t('sözleşme yenileme'), b: fmtFull(parse(p.contractEnd))+' · '+t('{n} gün kaldı', { n:rd }), go:payGo, w: rd <= 30 ? 2 : 1 });
 
     p.docs.forEach(d => {
       if (d.until && d.cat === 'Tahliye taahhütnamesi' && daysTo(d.until) <= s.evictDays)
-        out.push({ t:pre+'tahliye tarihi yaklaşıyor', b:'Taahhütnamedeki tarih: '+fmtFull(parse(d.until)), go:docGo, w:1 });
+        out.push({ t:pre+t('tahliye tarihi yaklaşıyor'), b:(t('Taahhütnamedeki tarih:')+' ')+fmtFull(parse(d.until)), go:docGo, w:1 });
     });
 
     if (p.moveOut && !p.moveOut.refunded){
       const mine = ui.role === 'tenant' ? p.moveOut.tenantOk : p.moveOut.landlordOk;
       const both = p.moveOut.tenantOk && p.moveOut.landlordOk;
       const go = ui.role === 'tenant' ? '/kiraci/belgeler/cikis' : '/ev-sahibi/ev/'+id+'/cikis';
-      if (!mine) out.push({ t:pre+'çıkış tutanağı onayını bekliyor', b:'Kesintileri inceleyip onayla.', go, w:2 });
-      else if (both && ui.role === 'landlord') out.push({ t:pre+'depozito iadesi', b:tl(moveOutSummary(p).refund)+' iade edilecek.', go, w:2 });
+      if (!mine) out.push({ t:pre+t('çıkış tutanağı onayını bekliyor'), b:t('Kesintileri inceleyip onayla.'), go, w:2 });
+      else if (both && ui.role === 'landlord') out.push({ t:pre+t('depozito iadesi'), b: t('{amount} iade edilecek.', { amount: tl(moveOutSummary(p).refund) }), go, w:2 });
     }
 
     if (!(p.inspect.tenantOk && p.inspect.landlordOk))
-      out.push({ t:pre+'tutanak onayı eksik', b:'Giriş tutanağını iki taraf da onaylamalı.',
+      out.push({ t:pre+t('tutanak onayı eksik'), b:t('Giriş tutanağını iki taraf da onaylamalı.'),
         go: ui.role === 'tenant' ? '/kiraci/belgeler/tutanak' : '/ev-sahibi/ev/'+id+'/tutanak', w:1 });
   });
 
@@ -365,28 +369,28 @@ export function search(q){
     const p = P(id);
     const base = ui.role === 'tenant' ? '/kiraci' : '/ev-sahibi/ev/'+id;
 
-    if (ui.role === 'landlord' && (match(p.name, q) || match(p.addr, q) || p.tenants.some(t => match(t.name, q))))
+    if (ui.role === 'landlord' && (match(p.name, q) || match(p.addr, q) || p.tenants.some(x => match(x.name, q))))
       out.push({ icon:'home', title:p.name, sub:p.addr, go:'/ev-sahibi/ev/'+id });
 
     p.requests.forEach(r => {
       if (match(r.title, q) || match(r.desc, q) || match(r.cat, q))
-        out.push({ icon:'wrench', title:r.title, sub:p.name+' · '+r.cat+' · '+STEPS[r.status],
+        out.push({ icon:'wrench', title:r.title, sub:p.name+' · '+t(r.cat)+' · '+t(STEPS[r.status]),
           go: ui.role === 'tenant' ? '/kiraci/talepler/'+r.id : base+'/talep?req='+r.id });
     });
 
     p.docs.forEach(d => {
       if (match(d.name, q) || match(d.cat, q))
-        out.push({ icon:'doc', title:d.name, sub:p.name+' · '+d.cat, go: base+(ui.role==='tenant'?'/belgeler':'/belge') });
+        out.push({ icon:'doc', title:d.name, sub:p.name+' · '+t(d.cat), go: base+(ui.role==='tenant'?'/belgeler':'/belge') });
     });
 
     if (ui.role === 'landlord') (p.expenses || []).forEach(e => {
       if (match(e.note, q) || match(e.cat, q))
-        out.push({ icon:'chart', title:e.cat+' · '+tl(e.amount), sub:p.name+(e.note ? ' · '+e.note : ''), go: base+'/gider' });
+        out.push({ icon:'chart', title:t(e.cat)+' · '+tl(e.amount), sub:p.name+(e.note ? ' · '+e.note : ''), go: base+'/gider' });
     });
 
     p.msgs.forEach(m => {
       if (match(m.text, q))
-        out.push({ icon:'chat', title:m.text.slice(0,60), sub:p.name+' · mesaj',
+        out.push({ icon:'chat', title:m.text.slice(0,60), sub:p.name+' · '+t('mesaj'),
           go: ui.role === 'tenant' ? '/kiraci/mesajlar' : base+'/mesaj' });
     });
   });

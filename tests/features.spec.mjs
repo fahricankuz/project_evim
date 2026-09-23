@@ -47,7 +47,7 @@ test('yenileme kabul edilince kira geçmişine gelecek tarihli dönem eklenir', 
   const card = page.locator('section:has(h2:text("Kira tutarı geçmişi"))');
   await expect(card).toContainText('₺45.500');
   await expect(card).toContainText('itibarıyla');
-  await expect(card).toContainText('+40%');
+  await expect(card).toContainText('+%40');
   // Bugünkü kira henüz değişmedi.
   await expect(page.locator('#screen .hero .big')).toHaveText('₺32.500');
 });

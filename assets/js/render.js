@@ -1,5 +1,6 @@
 /* Tek giriş noktalı çizim: rota değişince ekran, sekmeler, panel ve katman yenilenir. */
 
+import { t } from './i18n.js';
 import { S, ui } from './state.js';
 import { current } from './router.js';
 import { tenantScreen, landlordScreen, tabbar, shell } from './views.js';
@@ -46,8 +47,8 @@ export function render(){
 }
 
 function loadingScreen(){
-  return '<div class="auth center"><div class="spinner" role="status" aria-label="Yükleniyor"></div>' +
-    '<div class="muted">Verilerin yükleniyor…</div></div>';
+  return ('<div class="auth center"><div class="spinner" role="status" aria-label="'+t('Yükleniyor')+'"></div>') +
+    ('<div class="muted">'+t('Verilerin yükleniyor…')+'</div></div>');
 }
 
 let deferred = false;
@@ -70,17 +71,17 @@ export function softRender(){
   render();
 }
 
-const TENANT_TITLES = { panel:'Panel', pay:'Ödemeler', req:'Talepler', msg:'Mesajlar', docs:'Belgeler', agenda:'Takvim' };
-const LANDLORD_TITLES = { portfolio:'Portföy', lreq:'Talepler', lmsg:'Mesajlar', report:'Rapor', agenda:'Takvim' };
-const AUTH_TITLES = { giris:'Giriş', kayit:'Kayıt', sifre:'Şifre sıfırlama', 'yeni-sifre':'Yeni şifre', katil:'Davet', davet:'Eve bağlan' };
+const TENANT_TITLES = { panel:t('Panel'), pay:t('Ödemeler'), req:t('Talepler'), msg:t('Mesajlar'), docs:t('Belgeler'), agenda:t('Takvim') };
+const LANDLORD_TITLES = { portfolio:t('Portföy'), lreq:t('Talepler'), lmsg:t('Mesajlar'), report:t('Rapor'), agenda:t('Takvim') };
+const AUTH_TITLES = { giris:t('Giriş yap'), kayit:t('Kayıt'), sifre:t('Şifre sıfırlama'), 'yeni-sifre':t('Yeni şifre'), katil:t('Davet'), davet:t('Eve bağlan') };
 
 function titleFor(route, authView){
-  if (authView) return (AUTH_TITLES[route.auth] || 'Giriş') + ' · Evim';
+  if (authView) return (AUTH_TITLES[route.auth] || t('Giriş yap')) + (' '+t('· Evim'));
   if (route.role === 'landlord'){
-    if (route.pid && S.props[route.pid]) return S.props[route.pid].name + ' · Evim';
-    return (LANDLORD_TITLES[route.tab] || 'Evim') + ' · Evim';
+    if (route.pid && S.props[route.pid]) return S.props[route.pid].name + (' '+t('· Evim'));
+    return (LANDLORD_TITLES[route.tab] || t('Evim')) + (' '+t('· Evim'));
   }
-  return (TENANT_TITLES[route.tab] || 'Evim') + ' · Evim';
+  return (TENANT_TITLES[route.tab] || t('Evim')) + (' '+t('· Evim'));
 }
 
 /** Yalnızca katmanı yeniler (form içi anlık güncellemeler için). */

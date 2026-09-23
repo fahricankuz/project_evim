@@ -11,13 +11,14 @@ import { render, refreshLayer } from './render.js';
 import { notify } from './notify.js';
 import { ask } from './confirm.js';
 import { migrate } from './migrate.js';
+import { t, locale, setLang, getLang } from './i18n.js';
 import { install } from './pwa.js';
 import { LIVE } from './config.js';
 import * as backend from './backend.js';
 import { AUTH_ACTIONS, AUTH_FORMS, authSubmit } from './auth.js';
 import { startTour, nextStep, prevStep, endTour, TOUR } from './tour.js';
 import {
-  iso, t0, parse, fmt, fmtFull, monthYear, tl, daysTo, shrink, download, esc, announce, uid
+  iso, t0, parse, fmt, fmtFull, monthYear, tl, daysTo, shrink, download, esc, announce, uid, percent
 } from './util.js';
 
 /** Mesaja kimlik verir; sunucu mesajları kimlikle eşleştirir. */
@@ -45,7 +46,7 @@ export const A = {
 
   copyInvite: async () => {
     const el = document.getElementById('inviteLink');
-    try { await navigator.clipboard.writeText(el.value); notify({ title:'Kopyalandı', body:'Davet bağlantısı panoya alındı.', icon:'doc' }, false); }
+    try { await navigator.clipboard.writeText(el.value); notify({ title:t('Kopyalandı'), body:t('Davet bağlantısı panoya alındı.'), icon:'doc' }, false); }
     catch(e){ el.select(); }
   },
   closeSheet: () => closeSheet(),
@@ -54,8 +55,8 @@ export const A = {
     const toLandlord = ui.role === 'tenant';
     go(toLandlord ? '/ev-sahibi' : '/kiraci');
     notify({
-      title: toLandlord ? 'Ev sahibi görünümü' : 'Kiracı görünümü',
-      body: toLandlord ? 'Üç evinin genel durumunu görüyorsun.' : 'Moda’daki evin kiracısı olarak görüyorsun.',
+      title: toLandlord ? t('Ev sahibi görünümü') : t('Kiracı görünümü'),
+      body: toLandlord ? t('Üç evinin genel durumunu görüyorsun.') : t('Moda’daki evin kiracısı olarak görüyorsun.'),
       icon:'home'
     }, false);
   },
@@ -70,44 +71,44 @@ export const A = {
   advance: d => {
     const p = P(d.pid), r = reqOf(p, d.id);
     r.status = Math.min(3, r.status + 1);
-    logReq(r, 'Durum: '+STEPS[r.status]);
-    sysMsg(p, 'Talep durumu: '+r.title+' · '+STEPS[r.status]);
+    logReq(r, (t('Durum:')+' ')+t(STEPS[r.status]));
+    sysMsg(p, (t('Talep durumu:')+' ')+r.title+' · '+t(STEPS[r.status]));
     save(); render();
     if (S.settings.reqUpdates)
-      notify({ title:'Talep güncellendi', body:r.title+' → '+STEPS[r.status]+'. Kiracıya bildirildi.', icon:'wrench' });
+      notify({ title:t('Talep güncellendi'), body:r.title+' → '+t(STEPS[r.status])+t('. Kiracıya bildirildi.'), icon:'wrench' });
   },
 
   rewind: d => {
     const p = P(d.pid), r = reqOf(p, d.id);
     r.status = Math.max(0, r.status - 1);
-    logReq(r, 'Durum geri alındı: '+STEPS[r.status]);
+    logReq(r, (t('Durum geri alındı:')+' ')+t(STEPS[r.status]));
     save(); render();
   },
 
   decide: d => {
     const p = P(d.pid), r = reqOf(p, d.id);
     r.decision = d.v; r.status = 3;
-    logReq(r, 'Karar: '+d.v);
-    sysMsg(p, 'Ek talep: '+r.title+' · '+d.v);
+    logReq(r, (t('Karar:')+' ')+d.v);
+    sysMsg(p, (t('Ek talep:')+' ')+r.title+' · '+d.v);
     save(); render();
-    notify({ title:'Karar kaydedildi', body:r.title+': '+d.v, icon:'wrench' });
+    notify({ title:t('Karar kaydedildi'), body:r.title+': '+d.v, icon:'wrench' });
   },
 
   okCost: d => {
     const p = P(d.pid), r = reqOf(p, d.id);
     r.costOk = true;
-    logReq(r, 'Masraf paylaşımı onaylandı: '+r.cost);
-    sysMsg(p, 'Masraf paylaşımı onaylandı: '+r.cost);
+    logReq(r, (t('Masraf paylaşımı onaylandı:')+' ')+t(r.cost));
+    sysMsg(p, (t('Masraf paylaşımı onaylandı:')+' ')+t(r.cost));
     save(); render();
   },
 
   closeReq: d => {
     const p = P(d.pid), r = reqOf(p, d.id);
     r.status = 3;
-    logReq(r, 'Kiracı talebi çözüldü olarak işaretledi');
-    sysMsg(p, 'Talep kapatıldı: '+r.title);
+    logReq(r, t('Kiracı talebi çözüldü olarak işaretledi'));
+    sysMsg(p, (t('Talep kapatıldı:')+' ')+r.title);
     save(); render();
-    notify({ title:'Talep kapatıldı', body:r.title, icon:'wrench' });
+    notify({ title:t('Talep kapatıldı'), body:r.title, icon:'wrench' });
   },
 
   /* ---- ödemeler ---- */
@@ -117,20 +118,20 @@ export const A = {
     rec.status = 'approved';
     rec.approvedAt = Date.now();
     delete rec.rejectReason;
-    sysMsg(p, monthYear(d.key)+' kirası onaylandı');
+    sysMsg(p, monthYear(d.key)+(' '+t('kirası onaylandı')));
     save(); closeSheet(); render();
-    notify({ title:'Ödeme onaylandı', body:p.name+' · '+monthYear(d.key)+' kirası. Kiracıya bildirildi.', icon:'card' });
+    notify({ title:t('Ödeme onaylandı'), body:p.name+' · '+monthYear(d.key)+(' '+t('kirası. Kiracıya bildirildi.')), icon:'card' });
   },
 
   nudge: d => {
     const p = P(d.pid), per = period(p);
     pushMsg(p, {
       from:'landlord',
-      text:'Merhaba, '+monthYear(per.key)+' kirası için hatırlatma. Ödediysen dekontu uygulamaya yükleyebilir misin? Teşekkürler.',
+      text:(t('Merhaba,')+' ')+monthYear(per.key)+(' '+t('kirası için hatırlatma. Ödediysen dekontu uygulamaya yükleyebilir misin? Teşekkürler.')),
       at: Date.now()
     });
     save(); render();
-    notify({ title:'Hatırlatma gönderildi', body:tenantsLabel(p)+' için nazik bir mesaj iletildi.', icon:'chat' });
+    notify({ title:t('Hatırlatma gönderildi'), body:tenantsLabel(p)+(' '+t('için nazik bir mesaj iletildi.')), icon:'chat' });
   },
 
   /* ---- yenileme ---- */
@@ -141,10 +142,10 @@ export const A = {
     const max = Math.round(p.rent * (1 + cpi/100));
     const amt = Math.min(Number(ui.renewal.amount) || max, max);
     p.renewal = { amount:amt, max, cpi, status:'sent', at:Date.now() };
-    sysMsg(p, 'Yenileme teklifi: '+tl(amt)+' (yasal üst sınır '+tl(max)+')');
+    sysMsg(p, (t('Yenileme teklifi:')+' ')+tl(amt)+(' '+t('(yasal üst sınır')+' ')+tl(max)+')');
     ui.renewal = { cpi:null, amount:null };
     save(); closeSheet(); render();
-    notify({ title:'Teklif gönderildi', body:'Kiracı uygulamada kabul edebilir ya da mesajla görüşebilir.', icon:'card' });
+    notify({ title:t('Teklif gönderildi'), body:t('Kiracı uygulamada kabul edebilir ya da mesajla görüşebilir.'), icon:'card' });
   },
 
   acceptRenewal: d => {
@@ -152,18 +153,18 @@ export const A = {
     p.renewal.status = 'accepted';
     // Yeni tutar sözleşme bitişinden itibaren geçerli; kira geçmişine yazılır.
     p.rentHistory = (p.rentHistory || []).filter(h => h.from !== p.contractEnd);
-    p.rentHistory.push({ from:p.contractEnd, amount:p.renewal.amount, note:'Yenileme · TÜFE %'+p.renewal.cpi });
+    p.rentHistory.push({ from:p.contractEnd, amount:p.renewal.amount, note:t('Yenileme · TÜFE {pct}', { pct:percent(p.renewal.cpi, 2) }) });
     normalize(p);
-    sysMsg(p, 'Yenileme teklifi kabul edildi: '+tl(p.renewal.amount));
+    sysMsg(p, (t('Yenileme teklifi kabul edildi:')+' ')+tl(p.renewal.amount));
     save(); render();
-    notify({ title:'Teklifi kabul ettin', body:'Yeni kira '+fmtFull(parse(p.contractEnd))+' itibarıyla '+tl(p.renewal.amount)+'.', icon:'card' });
+    notify({ title:t('Teklifi kabul ettin'), body:(t('Yeni kira')+' ')+fmtFull(parse(p.contractEnd))+(' '+t('itibarıyla')+' ')+tl(p.renewal.amount)+'.', icon:'card' });
   },
 
   cancelRenewal: async d => {
-    if (!await ask({ title:'Teklif geri çekilsin mi?', body:'Kiracı artık teklifi göremez.', ok:'Geri çek' })) return;
+    if (!await ask({ title:t('Teklif geri çekilsin mi?'), body:t('Kiracı artık teklifi göremez.'), ok:t('Geri çek') })) return;
     const p = P(d.pid);
     p.renewal = null;
-    sysMsg(p, 'Yenileme teklifi geri çekildi');
+    sysMsg(p, t('Yenileme teklifi geri çekildi'));
     save(); render();
   },
 
@@ -172,7 +173,7 @@ export const A = {
     const p = P(d.pid);
     const doc = p.docs.find(x => x.id === d.id);
     if (!doc) return;
-    if (!await ask({ title:'Belge silinsin mi?', body:'“'+doc.name+'” kalıcı olarak kaldırılır.', ok:'Sil', danger:true })) return;
+    if (!await ask({ title:t('Belge silinsin mi?'), body:'“'+doc.name+t('” kalıcı olarak kaldırılır.'), ok:t('Sil'), danger:true })) return;
     p.docs = p.docs.filter(x => x.id !== d.id);
     save(); render();
   },
@@ -181,7 +182,7 @@ export const A = {
     const p = P(d.pid);
     const room = p.inspect.rooms[Number(d.i)];
     if (!room) return;
-    if (!await ask({ title:room.n+' silinsin mi?', body:'Odanın notu ve fotoğrafları silinir; tutanak onayları sıfırlanır.', ok:'Sil', danger:true })) return;
+    if (!await ask({ title:room.n+' silinsin mi?', body:t('Odanın notu ve fotoğrafları silinir; tutanak onayları sıfırlanır.'), ok:t('Sil'), danger:true })) return;
     p.inspect.rooms.splice(Number(d.i), 1);
     p.inspect.tenantOk = false; p.inspect.landlordOk = false;
     save(); render();
@@ -196,86 +197,86 @@ export const A = {
   approveInspect: d => {
     const p = P(d.pid);
     if (ui.role === 'tenant') p.inspect.tenantOk = true; else p.inspect.landlordOk = true;
-    sysMsg(p, 'Giriş tutanağı '+(ui.role === 'tenant' ? 'kiracı' : 'ev sahibi')+' tarafından onaylandı');
+    sysMsg(p, t('Giriş tutanağı {who} tarafından onaylandı', { who: ui.role === 'tenant' ? t('kiracı') : t('ev sahibi') }));
     save(); render();
     notify({
-      title:'Tutanak onaylandı',
-      body: p.inspect.tenantOk && p.inspect.landlordOk ? 'İki taraf da onayladı; tutanak kilitlendi.' : 'Karşı tarafın onayı bekleniyor.',
+      title:t('Tutanak onaylandı'),
+      body: p.inspect.tenantOk && p.inspect.landlordOk ? t('İki taraf da onayladı; tutanak kilitlendi.') : t('Karşı tarafın onayı bekleniyor.'),
       icon:'doc'
     });
   },
 
-  nudgeInspect: () => notify({ title:'Hatırlatma gönderildi', body:'Karşı tarafa tutanağı onaylaması için bildirim gitti.', icon:'doc' }),
+  nudgeInspect: () => notify({ title:t('Hatırlatma gönderildi'), body:t('Karşı tarafa tutanağı onaylaması için bildirim gitti.'), icon:'doc' }),
 
   exportInspect: d => {
     const p = P(d.pid);
-    const body = p.name+' · '+p.addr+'\nGiriş tutanağı · '+fmtFull(new Date())+'\n\n' +
-      p.inspect.rooms.map(r => '- '+r.n+': '+((r.photos||0)+(r.shots||[]).length)+' fotoğraf'+(r.note ? ' · '+r.note : '')).join('\n') +
-      '\n\nKiracı onayı: '+(p.inspect.tenantOk ? 'var' : 'yok')+'\nEv sahibi onayı: '+(p.inspect.landlordOk ? 'var' : 'yok');
-    openText('Tutanak dökümü', body);
+    const body = p.name+' · '+p.addr+('\n'+t('Giriş tutanağı ·')+' ')+fmtFull(new Date())+'\n\n' +
+      p.inspect.rooms.map(r => '- '+r.n+': '+t('{n} fotoğraf', { n:(r.photos||0)+(r.shots||[]).length })+(r.note ? ' · '+r.note : '')).join('\n') +
+      ('\n\n'+t('Kiracı onayı:')+' ')+(p.inspect.tenantOk ? t('var') : t('yok'))+('\n'+t('Ev sahibi onayı:')+' ')+(p.inspect.landlordOk ? t('var') : t('yok'));
+    openText(t('Tutanak dökümü'), body);
   },
 
   /* ---- dışa aktarma ---- */
   exportChat: d => {
     const p = P(d.pid);
     const body = p.name+' · '+p.addr+'\n\n' + p.msgs.map(m =>
-      new Date(m.at).toLocaleString('tr-TR')+' · '+senderName(p, m)+': '+m.text).join('\n');
-    openText('Yazışma dökümü', body);
+      new Date(m.at).toLocaleString(locale())+' · '+senderName(p, m)+': '+m.text).join('\n');
+    openText(t('Yazışma dökümü'), body);
   },
 
   shareReport: () => {
     const year = String(ui.reportYear || new Date().getFullYear());
     const yn = yearNumbers(year);
     const e = estimate(yn.gross, yn.exp, { year:Number(year), noExemption:!!ui.noExemption });
-    const body = year+' yılı konut kira geliri özeti\n\n' +
-      yn.rows.map(r => { const p = P(r.id); return p.name+' ('+p.addr+')\n  Tahsil edilen: '+tl(r.gross)+'  ·  Giderler: '+tl(r.exp); }).join('\n') +
-      '\n\nToplam tahsil edilen: '+tl(yn.gross) +
-      '\nToplam belgeli gider: '+tl(yn.exp) +
-      '\nİstisna ('+e.rates.year+'): '+(ui.noExemption ? 'uygulanmıyor' : tl(e.istisna)) +
-      (e.belowExemption ? '\n\nGelir istisna tutarının altında.' :
-        '\n\nTahmini vergi — götürü gider: '+tl(e.goturu.tax)+' · gerçek gider: '+tl(e.gercek.tax) +
-        '\nDaha avantajlı yöntem: '+(e.best === 'gercek' ? 'gerçek gider' : 'götürü gider')) +
-      (e.rates.approx ? '\n\nUyarı: '+year+' oranları eklenmediği için '+e.rates.year+' oranları kullanıldı.' : '') +
-      '\n\nNot: Onaylanmış ve kısmi ödemelerden hesaplanmıştır. Tahmindir; beyan için mali müşavirinize danışın.';
-    openText('Beyanname özeti', body);
+    const body = year+(' '+t('yılı konut kira geliri özeti')+'\n\n') +
+      yn.rows.map(r => { const p = P(r.id); return p.name+' ('+p.addr+(t(')\n  Tahsil edilen:')+' ')+tl(r.gross)+('  '+t('·  Giderler:')+' ')+tl(r.exp); }).join('\n') +
+      ('\n\n'+t('Toplam tahsil edilen:')+' ')+tl(yn.gross) +
+      ('\n'+t('Toplam belgeli gider:')+' ')+tl(yn.exp) +
+      ('\n'+t('İstisna ('))+e.rates.year+'): '+(ui.noExemption ? t('uygulanmıyor') : tl(e.istisna)) +
+      (e.belowExemption ? ('\n\n'+t('Gelir istisna tutarının altında.')) :
+        ('\n\n'+t('Tahmini vergi — götürü gider:')+' ')+tl(e.goturu.tax)+(' '+t('· gerçek gider:')+' ')+tl(e.gercek.tax) +
+        ('\n'+t('Daha avantajlı yöntem:')+' ')+(e.best === 'gercek' ? t('gerçek gider') : t('götürü gider'))) +
+      (e.rates.approx ? ('\n\n'+t('Uyarı:')+' ')+year+(' '+t('oranları eklenmediği için')+' ')+e.rates.year+(' '+t('oranları kullanıldı.')) : '') +
+      ('\n\n'+t('Not: Onaylanmış ve kısmi ödemelerden hesaplanmıştır. Tahmindir; beyan için mali müşavirinize danışın.'));
+    openText(t('Beyanname özeti'), body);
   },
 
   exportCsv: () => {
-    const rows = [['Tür','Ev','Dönem / tarih','Durum / kategori','Tutar','Açıklama']];
+    const rows = [[t('Tür'),t('Ev'),t('Dönem / tarih'),t('Durum / kategori'),t('Tutar'),t('Açıklama')]];
     S.order.forEach(id => {
       const p = P(id);
       Object.keys(p.pay).sort().forEach(k => {
         const r = p.pay[k];
-        rows.push(['Ödeme', p.name, k, r.status, r.amount != null ? r.amount : rentAt(p, k), r.date || '']);
+        rows.push([t('Ödeme'), p.name, k, r.status, r.amount != null ? r.amount : rentAt(p, k), r.date || '']);
       });
       (p.expenses || []).slice().sort((a, b) => a.date < b.date ? -1 : 1).forEach(e => {
-        rows.push(['Gider', p.name, e.date, e.cat, e.amount, e.note || '']);
+        rows.push([t('Gider'), p.name, e.date, e.cat, e.amount, e.note || '']);
       });
     });
     const csv = rows.map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\n');
     download('evim-kayitlar.csv', '\uFEFF'+csv, 'text/csv;charset=utf-8');
-    notify({ title:'CSV indirildi', body:'Ödemeler ve giderler dosyası hazırlandı.', icon:'chart' }, false);
+    notify({ title:t('CSV indirildi'), body:t('Ödemeler ve giderler dosyası hazırlandı.'), icon:'chart' }, false);
   },
 
   exportData: () => {
     download('evim-verileri.json', JSON.stringify(S, null, 2));
-    notify({ title:'Veriler indirildi', body:'JSON dosyasını içe aktararak geri yükleyebilirsin.', icon:'doc' }, false);
+    notify({ title:t('Veriler indirildi'), body:t('JSON dosyasını içe aktararak geri yükleyebilirsin.'), icon:'doc' }, false);
   },
 
   copyText: async () => {
-    const t = document.getElementById('txtOut');
+    const box = document.getElementById('txtOut');
     try {
-      await navigator.clipboard.writeText(t.value);
-      notify({ title:'Kopyalandı', body:'Metin panoya alındı.', icon:'doc' }, false);
+      await navigator.clipboard.writeText(box.value);
+      notify({ title:t('Kopyalandı'), body:t('Metin panoya alındı.'), icon:'doc' }, false);
     } catch(e){
-      t.select();
-      notify({ title:'Kopyalanamadı', body:'Metin seçildi; Ctrl/Cmd + C ile kopyalayabilirsin.', icon:'doc' }, false);
+      box.select();
+      notify({ title:t('Kopyalanamadı'), body:t('Metin seçildi; Ctrl/Cmd + C ile kopyalayabilirsin.'), icon:'doc' }, false);
     }
   },
 
   downloadText: () => {
-    const t = ui.text || { title:'metin', body:'' };
-    download(t.title.toLocaleLowerCase('tr-TR').replace(/\s+/g,'-')+'.txt', t.body, 'text/plain;charset=utf-8');
+    const txt = ui.text || { title:'metin', body:'' };
+    download(txt.title.toLocaleLowerCase(locale()).replace(/\s+/g,'-')+'.txt', txt.body, 'text/plain;charset=utf-8');
   },
 
   /* ---- bildirim, tema, veri ---- */
@@ -284,16 +285,16 @@ export const A = {
   theme: d => { setTheme(d.v); render(); },
 
   reset: async () => {
-    if (!await ask({ title:'Demo sıfırlansın mı?', body:'Girdiğin her şey silinir ve örnek veri yeniden yüklenir.', ok:'Sıfırla', danger:true })) return;
+    if (!await ask({ title:t('Demo sıfırlansın mı?'), body:t('Girdiğin her şey silinir ve örnek veri yeniden yüklenir.'), ok:t('Sıfırla'), danger:true })) return;
     resetState();
     go('/kiraci', { replace:true });
     render();
-    notify({ title:'Sıfırlandı', body:'Demo verisi yeniden yüklendi.', icon:'home' }, false);
+    notify({ title:t('Sıfırlandı'), body:t('Demo verisi yeniden yüklendi.'), icon:'home' }, false);
   },
 
   removeProp: async d => {
-    const name = P(d.pid)?.name || 'Bu ev';
-    if (!await ask({ title:name+' kaldırılsın mı?', body:'Evin ödemeleri, talepleri, mesajları ve belgeleri de silinir.', ok:'Kaldır', danger:true })) return;
+    const name = P(d.pid)?.name || t('Bu ev');
+    if (!await ask({ title:name+(' '+t('kaldırılsın mı?')), body:t('Evin ödemeleri, talepleri, mesajları ve belgeleri de silinir.'), ok:t('Kaldır'), danger:true })) return;
     delete S.props[d.pid];
     S.order = S.order.filter(x => x !== d.pid);
     if (S.myHome === d.pid) S.myHome = S.order[0];
@@ -307,22 +308,22 @@ export const A = {
     const moda = P('moda') || P(S.order[0]);
     const cih = P('cihangir') || P(S.order[0]);
     const map = {
-      rent:{ title:'Kira günü yaklaşıyor', body: monthYear(period(moda).key)+' kirası yaklaşıyor. Ödeyince dekontu yükle.', icon:'card',
-             actions:[{ label:'Ödemelere git', run:() => go('/kiraci/odemeler') }] },
-      reqUpd:{ title:'Talebin güncellendi', body:'Kombi basıncı düşüyor → Usta çağrıldı. Masraf ev sahibinde.', icon:'wrench',
-             actions:[{ label:'Talebi aç', run:() => go('/kiraci/talepler') }] },
-      renew:{ title:'Yenileme teklifi geldi', body:'Ev sahibin yeni dönem için teklif gönderdi. Yasal üst sınırla karşılaştırarak incele.', icon:'card',
-             actions:[{ label:'İncele', run:() => go('/kiraci/odemeler') }] },
-      evict:{ title:'Tahliye tarihi yaklaşıyor', body:'Taahhütnamedeki tarihe yaklaşıldı.', icon:'doc',
-             actions:[{ label:'Belgeler', run:() => go('/kiraci/belgeler') }] },
-      receipt:{ title:cih.name+': dekont geldi', body:'Bu ayın kirası için dekont yüklendi. Onayını bekliyor.', icon:'card',
-             actions:[{ label:'Onayla', run:() => go('/ev-sahibi/ev/'+cih.id+'/odeme') }] },
-      late:{ title:'Kira gecikti', body:'Bu ayın kirası henüz ödenmedi. Nazik bir hatırlatma gönderebilirsin.', icon:'card',
-             actions:[{ label:'Portföye git', run:() => go('/ev-sahibi') }] },
-      newReq:{ title:cih.name+': yeni talep', body:'Banyo aspiratörü değişimi · fotoğraf ekli.', icon:'wrench',
-             actions:[{ label:'Talebi aç', run:() => go('/ev-sahibi/ev/'+cih.id+'/talep') }] },
-      dask:{ title:'DASK yenileme', body:cih.name+' poliçesi '+daysTo(cih.dask)+' gün içinde bitiyor.', icon:'doc',
-             actions:[{ label:'Belgelere git', run:() => go('/ev-sahibi/ev/'+cih.id+'/belge') }] }
+      rent:{ title:t('Kira günü yaklaşıyor'), body: monthYear(period(moda).key)+(' '+t('kirası yaklaşıyor. Ödeyince dekontu yükle.')), icon:'card',
+             actions:[{ label:t('Ödemelere git'), run:() => go('/kiraci/odemeler') }] },
+      reqUpd:{ title:t('Talebin güncellendi'), body:t('Kombi basıncı düşüyor → Usta çağrıldı. Masraf ev sahibinde.'), icon:'wrench',
+             actions:[{ label:t('Talebi aç'), run:() => go('/kiraci/talepler') }] },
+      renew:{ title:t('Yenileme teklifi geldi'), body:t('Ev sahibin yeni dönem için teklif gönderdi. Yasal üst sınırla karşılaştırarak incele.'), icon:'card',
+             actions:[{ label:t('İncele'), run:() => go('/kiraci/odemeler') }] },
+      evict:{ title:t('Tahliye tarihi yaklaşıyor'), body:t('Taahhütnamedeki tarihe yaklaşıldı.'), icon:'doc',
+             actions:[{ label:t('Belgeler'), run:() => go('/kiraci/belgeler') }] },
+      receipt:{ title:cih.name+': dekont geldi', body:t('Bu ayın kirası için dekont yüklendi. Onayını bekliyor.'), icon:'card',
+             actions:[{ label:t('Onayla'), run:() => go('/ev-sahibi/ev/'+cih.id+'/odeme') }] },
+      late:{ title:t('Kira gecikti'), body:t('Bu ayın kirası henüz ödenmedi. Nazik bir hatırlatma gönderebilirsin.'), icon:'card',
+             actions:[{ label:t('Portföye git'), run:() => go('/ev-sahibi') }] },
+      newReq:{ title:cih.name+': yeni talep', body:t('Banyo aspiratörü değişimi · fotoğraf ekli.'), icon:'wrench',
+             actions:[{ label:t('Talebi aç'), run:() => go('/ev-sahibi/ev/'+cih.id+'/talep') }] },
+      dask:{ title:t('DASK yenileme'), body:cih.name+(' '+t('poliçesi')+' ')+daysTo(cih.dask)+(' '+t('gün içinde bitiyor.')), icon:'doc',
+             actions:[{ label:t('Belgelere git'), run:() => go('/ev-sahibi/ev/'+cih.id+'/belge') }] }
     };
     notify(map[d.v]);
   },
@@ -330,19 +331,19 @@ export const A = {
   /* ---- kiracılar ---- */
   removeTenant: async d => {
     const p = P(d.pid);
-    const t = p.tenants.find(x => x.id === d.id);
-    if (!t) return;
-    if (!await ask({ title:t.name+' evden çıkarılsın mı?', body:'Bu kiracı artık evin ödemelerini, taleplerini ve yazışmalarını göremez. Geçmiş kayıtlar korunur.', ok:'Çıkar', danger:true })) return;
+    const tn = p.tenants.find(x => x.id === d.id);
+    if (!tn) return;
+    if (!await ask({ title:tn.name+(' '+t('evden çıkarılsın mı?')), body:t('Bu kiracı artık evin ödemelerini, taleplerini ve yazışmalarını göremez. Geçmiş kayıtlar korunur.'), ok:t('Çıkar'), danger:true })) return;
     if (LIVE){
       try {
-        if (t.pending) await backend.deleteInvite(p.id, t.code);
-        else await backend.removeMember(p.id, t.id);
+        if (tn.pending) await backend.deleteInvite(p.id, tn.code);
+        else await backend.removeMember(p.id, tn.id);
         render();
-      } catch(e){ notify({ title:'İşlem yapılamadı', body: backend.humanError(e), icon:'home' }, false); }
+      } catch(e){ notify({ title:t('İşlem yapılamadı'), body: backend.humanError(e), icon:'home' }, false); }
       return;
     }
     p.tenants = p.tenants.filter(x => x.id !== d.id);
-    sysMsg(p, t.name+' evden çıkarıldı');
+    sysMsg(p, tn.name+(' '+t('evden çıkarıldı')));
     save(); render();
   },
 
@@ -351,11 +352,11 @@ export const A = {
     const p = P(d.pid), r = reqOf(p, d.id);
     r.quotes.forEach(q => { q.chosen = q.id === d.q; });
     const q = r.quotes.find(x => x.chosen);
-    logReq(r, 'Teklif seçildi: '+q.vendor+' · '+tl(q.amount));
-    sysMsg(p, 'Talep için usta seçildi: '+q.vendor+' ('+tl(q.amount)+') · '+r.title);
-    if (r.status < 2){ r.status = 2; logReq(r, 'Durum: '+STEPS[2]); }
+    logReq(r, (t('Teklif seçildi:')+' ')+q.vendor+' · '+tl(q.amount));
+    sysMsg(p, (t('Talep için usta seçildi:')+' ')+q.vendor+' ('+tl(q.amount)+') · '+r.title);
+    if (r.status < 2){ r.status = 2; logReq(r, (t('Durum:')+' ')+t(STEPS[2])); }
     save(); render();
-    notify({ title:'Usta seçildi', body:q.vendor+' · '+tl(q.amount)+'. Kiracıya bildirildi.', icon:'wrench' });
+    notify({ title:t('Usta seçildi'), body:q.vendor+' · '+tl(q.amount)+t('. Kiracıya bildirildi.'), icon:'wrench' });
   },
 
   removeQuote: d => {
@@ -369,7 +370,7 @@ export const A = {
     const p = P(d.pid);
     const e = p.expenses.find(x => x.id === d.id);
     if (!e) return;
-    if (!await ask({ title:'Gider silinsin mi?', body:e.cat+' · '+tl(e.amount), ok:'Sil', danger:true })) return;
+    if (!await ask({ title:t('Gider silinsin mi?'), body:e.cat+' · '+tl(e.amount), ok:t('Sil'), danger:true })) return;
     p.expenses = p.expenses.filter(x => x.id !== d.id);
     // Talep faturasına bağlıysa bağlantıyı kopar.
     p.requests.forEach(r => { if (r.invoice && r.invoice.expenseId === d.id) r.invoice.expenseId = null; });
@@ -381,7 +382,7 @@ export const A = {
     const p = P(d.pid), due = unpaid(p);
     if (!due.total) return;
     p.moveOut.deductions.push({
-      id:uid('k'), kind:'rent', label:'Ödenmemiş kira', amount:due.total,
+      id:uid('k'), kind:'rent', label:t('Ödenmemiş kira'), amount:due.total,
       note: due.months.map(m => monthYear(m.key)+' '+tl(m.owed)).join(', ')
     });
     resetMoveOutApprovals(p);
@@ -406,38 +407,46 @@ export const A = {
     const p = P(d.pid), mo = p.moveOut;
     if (ui.role === 'tenant') mo.tenantOk = true; else mo.landlordOk = true;
     const both = mo.tenantOk && mo.landlordOk;
-    sysMsg(p, 'Çıkış hesabı '+(ui.role === 'tenant' ? 'kiracı' : 'ev sahibi')+' tarafından onaylandı'+(both ? ' · iade: '+tl(moveOutSummary(p).refund) : ''));
+    sysMsg(p, t('Çıkış hesabı {who} tarafından onaylandı', { who: ui.role === 'tenant' ? t('kiracı') : t('ev sahibi') })+(both ? (' '+t('· iade:')+' ')+tl(moveOutSummary(p).refund) : ''));
     save(); render();
-    notify({ title:'Çıkış hesabı onaylandı', body: both ? 'İki taraf da onayladı; iade tutarı kesinleşti.' : 'Karşı tarafın onayı bekleniyor.', icon:'key' });
+    notify({ title:t('Çıkış hesabı onaylandı'), body: both ? t('İki taraf da onayladı; iade tutarı kesinleşti.') : t('Karşı tarafın onayı bekleniyor.'), icon:'key' });
   },
 
   cancelMoveOut: async d => {
-    if (!await ask({ title:'Çıkış süreci iptal edilsin mi?', body:'Çıkış notları, fotoğraflar ve kesintiler silinir.', ok:'İptal et', danger:true })) return;
+    if (!await ask({ title:t('Çıkış süreci iptal edilsin mi?'), body:t('Çıkış notları, fotoğraflar ve kesintiler silinir.'), ok:t('İptal et'), danger:true })) return;
     const p = P(d.pid);
     p.moveOut = null;
-    sysMsg(p, 'Çıkış süreci iptal edildi');
+    sysMsg(p, t('Çıkış süreci iptal edildi'));
     save(); render();
   },
 
   exportMoveOut: d => {
     const p = P(d.pid), mo = p.moveOut, sm = moveOutSummary(p);
-    const body = p.name+' · '+p.addr+'\nÇıkış raporu'+(mo.date ? ' · '+fmtFull(parse(mo.date)) : '')+'\n' +
-      'Kiracı: '+tenantsLabel(p)+'\n\n' +
-      'ODALAR\n' + mo.rooms.map(r => {
+    const body = p.name+' · '+p.addr+('\n'+t('Çıkış raporu'))+(mo.date ? ' · '+fmtFull(parse(mo.date)) : '')+'\n' +
+      (t('Kiracı:')+' ')+tenantsLabel(p)+'\n\n' +
+      (t('ODALAR')+'\n') + mo.rooms.map(r => {
         const entry = p.inspect.rooms.find(x => x.n === r.n);
-        return '- '+r.n+': '+(r.condition || 'değerlendirilmedi') +
-          '\n    Giriş: '+(entry ? (entry.note || 'not yok') : 'kayıt yok') +
-          '\n    Çıkış: '+(r.note || 'not yok')+' · '+(r.shots || []).length+' fotoğraf';
+        return '- '+r.n+': '+(r.condition || t('değerlendirilmedi')) +
+          ('\n    '+t('Giriş:')+' ')+(entry ? (entry.note || t('not yok')) : t('kayıt yok')) +
+          ('\n    '+t('Çıkış:')+' ')+(r.note || t('not yok'))+' · '+t('{n} fotoğraf', { n:(r.shots || []).length });
       }).join('\n') +
-      '\n\nKESİNTİLER\n' + (mo.deductions.length ? mo.deductions.map(x => '- '+x.label+': '+tl(x.amount)+(x.note ? ' ('+x.note+')' : '')).join('\n') : '- yok') +
-      '\n\nDepozito: '+tl(sm.deposit)+'\nKesinti toplamı: '+tl(sm.deducted)+'\nİade: '+tl(sm.refund) +
-      (sm.extra ? '\nKiracıdan ayrıca talep: '+tl(sm.extra) : '') +
-      '\n\nKiracı onayı: '+(mo.tenantOk ? 'var' : 'yok')+'\nEv sahibi onayı: '+(mo.landlordOk ? 'var' : 'yok') +
-      (mo.refunded ? '\nİade yapıldı: '+tl(mo.refunded.amount)+' · '+fmtFull(parse(mo.refunded.date)) : '');
-    openText('Çıkış raporu', body);
+      ('\n\n'+t('KESİNTİLER')+'\n') + (mo.deductions.length ? mo.deductions.map(x => '- '+x.label+': '+tl(x.amount)+(x.note ? ' ('+x.note+')' : '')).join('\n') : '- yok') +
+      ('\n\n'+t('Depozito:')+' ')+tl(sm.deposit)+('\n'+t('Kesinti toplamı:')+' ')+tl(sm.deducted)+('\n'+t('İade:')+' ')+tl(sm.refund) +
+      (sm.extra ? ('\n'+t('Kiracıdan ayrıca talep:')+' ')+tl(sm.extra) : '') +
+      ('\n\n'+t('Kiracı onayı:')+' ')+(mo.tenantOk ? t('var') : t('yok'))+('\n'+t('Ev sahibi onayı:')+' ')+(mo.landlordOk ? t('var') : t('yok')) +
+      (mo.refunded ? ('\n'+t('İade yapıldı:')+' ')+tl(mo.refunded.amount)+' · '+fmtFull(parse(mo.refunded.date)) : '');
+    openText(t('Çıkış raporu'), body);
   },
 
   install: async () => { await install(); render(); },
+
+  lang: async d => {
+    if (d.v === getLang()) return;
+    if (LIVE && backend.live.user) await backend.setProfileLang(d.v).catch(() => {});
+    S.lang = d.v;
+    save();
+    setLang(d.v);          // tercihi kaydeder ve sayfayı yeniden yükler
+  },
 
   /* ---- tur ---- */
   startTour: () => { startTour(); closeSheet(); tourGo(); render(); },
@@ -481,10 +490,10 @@ export async function onSubmit(ev){
     document.getElementById('msgIn')?.focus();
     if (!LIVE && ui.role === 'tenant'){
       setTimeout(() => {
-        pushMsg(p, { from:'landlord', text:'Tamam, not aldım.', at: Date.now() });
+        pushMsg(p, { from:'landlord', text:t('Tamam, not aldım.'), at: Date.now() });
         save();
         if (current().tab === 'msg') render();
-        notify({ title:p.landlord.name, body:'Tamam, not aldım.', icon:'chat' }, false);
+        notify({ title:p.landlord.name, body:t('Tamam, not aldım.'), icon:'chat' }, false);
       }, 2500);
     }
     return;
@@ -502,14 +511,14 @@ export async function onSubmit(ev){
       desc:String(fd.get('desc') || '').trim(), urgency:fd.get('urgency'),
       status:0, cost:'Belirlenmedi', costOk:false, decision:null,
       date: iso(t0()), photos:0, shots,
-      log:[{ at:Date.now(), text:'Talep açıldı' }]
+      log:[{ at:Date.now(), text:t('Talep açıldı') }]
     };
     p.requests.unshift(r);
-    sysMsg(p, 'Yeni talep açıldı: '+r.title);
+    sysMsg(p, (t('Yeni talep açıldı:')+' ')+r.title);
     save();
     go(ui.role === 'tenant' ? '/kiraci/talepler' : '/ev-sahibi/ev/'+p.id+'/talep', { replace:true });
     render();
-    notify({ title:'Talep gönderildi', body:'Ev sahibine bildirildi. Durum değiştikçe haber vereceğiz.', icon:'wrench' });
+    notify({ title:t('Talep gönderildi'), body:t('Ev sahibine bildirildi. Durum değiştikçe haber vereceğiz.'), icon:'wrench' });
     return;
   }
 
@@ -535,15 +544,15 @@ export async function onSubmit(ev){
     if (stored) rec.photo = stored;
 
     p.pay[key] = rec;
-    sysMsg(p, monthYear(key)+' kirası için dekont yüklendi'+(rec.status === 'partial' ? ' (kısmi: '+tl(total)+')' : ''));
+    sysMsg(p, monthYear(key)+(' '+t('kirası için dekont yüklendi'))+(rec.status === 'partial' ? (' '+t('(kısmi:')+' ')+tl(total)+')' : ''));
     save();
     closeSheet();
     render();
     notify({
-      title: rec.status === 'partial' ? 'Kısmi ödeme kaydedildi' : 'Dekont yüklendi',
+      title: rec.status === 'partial' ? t('Kısmi ödeme kaydedildi') : t('Dekont yüklendi'),
       body: rec.status === 'partial'
-        ? tl(due - total)+' bakiye görünüyor; kalanı yükleyince onaya gider.'
-        : 'Ev sahibinin onayı bekleniyor. Onaylanınca haber vereceğiz.',
+        ? tl(due - total)+(' '+t('bakiye görünüyor; kalanı yükleyince onaya gider.'))
+        : t('Ev sahibinin onayı bekleniyor. Onaylanınca haber vereceğiz.'),
       icon:'card'
     });
     return;
@@ -554,12 +563,12 @@ export async function onSubmit(ev){
     if (!rec) return;
     const note = String(fd.get('note') || '').trim();
     rec.status = 'rejected';
-    rec.rejectReason = String(fd.get('reason')) + (note ? ' · '+note : '');
-    sysMsg(p, monthYear(key)+' dekontu reddedildi: '+rec.rejectReason);
+    rec.rejectReason = t(String(fd.get('reason'))) + (note ? ' · '+note : '');
+    sysMsg(p, t('{month} dekontu reddedildi: {reason}', { month: monthYear(key), reason: rec.rejectReason }));
     save();
     closeSheet();
     render();
-    notify({ title:'Dekont reddedildi', body:'Kiracıya gerekçe iletildi.', icon:'card' });
+    notify({ title:t('Dekont reddedildi'), body:t('Kiracıya gerekçe iletildi.'), icon:'card' });
     return;
   }
 
@@ -571,11 +580,11 @@ export async function onSubmit(ev){
     const path = LIVE ? await backend.storeFile(p.id, file) : null;
     p.docs.push(Object.assign({ id:uid('d'), cat, name:file.name, at: iso(t0()), until: until || undefined }, path ? { path } : {}));
     if (cat === 'DASK poliçesi' && until) p.dask = until;
-    sysMsg(p, cat+' yüklendi: '+file.name);
+    sysMsg(p, cat+(' '+t('yüklendi:')+' ')+file.name);
     save();
     closeSheet();
     render();
-    notify({ title:'Belge yüklendi', body: cat + (until ? ' · '+fmtFull(parse(until))+' için hatırlatma kuruldu' : ''), icon:'doc' });
+    notify({ title:t('Belge yüklendi'), body: cat + (until ? ' · '+fmtFull(parse(until))+(' '+t('için hatırlatma kuruldu')) : ''), icon:'doc' });
     return;
   }
 
@@ -590,7 +599,7 @@ export async function onSubmit(ev){
   }
 
   if (type === 'addProp'){
-    const id = uid('p'), t = t0();
+    const id = uid('p'), today = t0();
     const name = String(fd.get('name')).trim();
     const rent = Number(fd.get('rent')) || 0;
     const phone = String(fd.get('phone') || '');
@@ -598,13 +607,13 @@ export async function onSubmit(ev){
       id, name, addr:String(fd.get('addr')).trim(),
       // Gerçek hesapta kiracı davetle katılır; demoda yer tutucu eklenir.
       tenants: LIVE ? [] : [{ id:uid('t'), name:'Davet bekleniyor', phone, email:'' }],
-      landlord: LIVE ? { name: backend.live.profile?.name || 'Ev sahibi', phone: backend.live.profile?.phone || '' } : (S.order.length ? P(S.order[0]).landlord : { name:'Ev sahibi', phone:'' }),
+      landlord: LIVE ? { name: backend.live.profile?.name || t('Ev sahibi'), phone: backend.live.profile?.phone || '' } : (S.order.length ? P(S.order[0]).landlord : { name:'Ev sahibi', phone:'' }),
       ownerId: LIVE ? backend.live.user?.id : undefined,
       rent, dueDay: Number(fd.get('due')) || 1,
-      rentHistory:[{ from: iso(t), amount: rent, note:'Sözleşme başlangıcı' }],
+      rentHistory:[{ from: iso(today), amount: rent, note:t('Sözleşme başlangıcı') }],
       expenses:[], value:null, moveOut:null,
       aidat:0, aidatPayer:'Kiracı', deposit:0, depositNote:'—',
-      startDate: iso(t), contractEnd: iso(new Date(t.getFullYear()+1, t.getMonth(), t.getDate())), dask: iso(new Date(t.getFullYear()+1, t.getMonth(), t.getDate())),
+      startDate: iso(today), contractEnd: iso(new Date(today.getFullYear()+1, today.getMonth(), today.getDate())), dask: iso(new Date(today.getFullYear()+1, today.getMonth(), today.getDate())),
       bills:[], pay:{}, requests:[], msgs:[], docs:[],
       inspect:{ tenantOk:false, landlordOk:false, rooms:[{ n:'Salon', photos:0, shots:[], note:'' }] },
       renewal:null
@@ -619,16 +628,16 @@ export async function onSubmit(ev){
       try {
         const code = await backend.createInvite(id, { name:'', email:'', phone });
         openSheet('davet-paylas', { pid:id, code });
-      } catch(e){ notify({ title:'Davet oluşturulamadı', body: backend.humanError(e), icon:'home' }, false); }
+      } catch(e){ notify({ title:t('Davet oluşturulamadı'), body: backend.humanError(e), icon:'home' }, false); }
       return;
     }
 
     const ph = phone.replace(/\D/g, '');
     notify({
-      title:'Ev eklendi', body:'Kiracıya davet linkini gönder.', icon:'home',
-      actions:[{ label:'WhatsApp ile davet et', run:() => {
+      title:t('Ev eklendi'), body:t('Kiracıya davet linkini gönder.'), icon:'home',
+      actions:[{ label:t('WhatsApp ile davet et'), run:() => {
         const num = ph ? '9' + ph.replace(/^9/, '') : '';
-        window.open('https://wa.me/'+num+'?text='+encodeURIComponent('Merhaba, '+name+' için Evim’de ortak panelimize katılır mısın? [davet linki]'), '_blank', 'noopener');
+        window.open('https://wa.me/'+num+'?text='+encodeURIComponent((t('Merhaba,')+' ')+name+(' '+t('için Evim’de ortak panelimize katılır mısın? [davet linki]'))), '_blank', 'noopener');
       } }]
     });
     return;
@@ -643,20 +652,20 @@ export async function onSubmit(ev){
         const code = await backend.createInvite(p.id, { name, email, phone });
         closeSheet();
         setTimeout(() => openSheet('davet-paylas', { pid:p.id, code }), 60);
-      } catch(e){ notify({ title:'Davet oluşturulamadı', body: backend.humanError(e), icon:'home' }, false); }
+      } catch(e){ notify({ title:t('Davet oluşturulamadı'), body: backend.humanError(e), icon:'home' }, false); }
       return;
     }
     p.tenants.push({ id:uid('t'), name, email, phone });
-    sysMsg(p, name+' eve kiracı olarak eklendi');
+    sysMsg(p, name+(' '+t('eve kiracı olarak eklendi')));
     save(); closeSheet(); render();
     setTimeout(() => openSheet('davet-paylas', { pid:p.id, code:'DEMO' + String(Math.floor(Math.random() * 9000) + 1000) }), 60);
     return;
     const digits = phone.replace(/\D/g, '');
     notify({
-      title:'Kiracı eklendi',
-      body: email ? name+' için davet '+email+' adresine gönderilecek.' : name+' eklendi. Davet bağlantısını paylaşabilirsin.',
+      title:t('Kiracı eklendi'),
+      body: email ? name+(' '+t('için davet')+' ')+email+(' '+t('adresine gönderilecek.')) : name+(' '+t('eklendi. Davet bağlantısını paylaşabilirsin.')),
       icon:'home',
-      actions: digits ? [{ label:'WhatsApp ile davet et', run:() => window.open('https://wa.me/9'+digits.replace(/^9/, '')+'?text='+encodeURIComponent('Merhaba, '+p.name+' için Evim’de ortak panelimize katılır mısın? [davet linki]'), '_blank', 'noopener') }] : undefined
+      actions: digits ? [{ label:t('WhatsApp ile davet et'), run:() => window.open('https://wa.me/9'+digits.replace(/^9/, '')+'?text='+encodeURIComponent((t('Merhaba,')+' ')+p.name+(' '+t('için Evim’de ortak panelimize katılır mısın? [davet linki]'))), '_blank', 'noopener') }] : undefined
     });
     return;
   }
@@ -667,7 +676,7 @@ export async function onSubmit(ev){
       amount:Number(fd.get('amount')) || 0, note:String(fd.get('note') || '').trim(), chosen:false };
     r.quotes = r.quotes || [];
     r.quotes.push(q);
-    logReq(r, 'Teklif eklendi: '+q.vendor+' · '+tl(q.amount));
+    logReq(r, (t('Teklif eklendi:')+' ')+q.vendor+' · '+tl(q.amount));
     save(); closeSheet(); render();
     return;
   }
@@ -683,15 +692,15 @@ export async function onSubmit(ev){
       p.expenses = p.expenses || [];
       p.expenses.push({
         id:expenseId, cat:'Tamir ve bakım', amount: r.cost === 'Paylaşımlı' ? Math.round(amount / 2) : amount,
-        date, note: r.title + (r.cost === 'Paylaşımlı' ? ' (yarı pay)' : ''), reqId:r.id
+        date, note: r.title + (r.cost === 'Paylaşımlı' ? (' '+t('(yarı pay)')) : ''), reqId:r.id
       });
     }
     const path = file && LIVE ? await backend.storeFile(p.id, file) : null;
     r.invoice = Object.assign({ amount, date, name: file ? file.name : 'fatura', expenseId }, path ? { path } : {});
-    logReq(r, 'Fatura işlendi: '+tl(amount));
-    sysMsg(p, 'Talep faturası: '+r.title+' · '+tl(amount));
+    logReq(r, (t('Fatura işlendi:')+' ')+tl(amount));
+    sysMsg(p, (t('Talep faturası:')+' ')+r.title+' · '+tl(amount));
     save(); closeSheet(); render();
-    notify({ title:'Fatura kaydedildi', body: expenseId ? 'Gider defterine de işlendi.' : 'Gider defterine eklenmedi.', icon:'doc' }, false);
+    notify({ title:t('Fatura kaydedildi'), body: expenseId ? t('Gider defterine de işlendi.') : t('Gider defterine eklenmedi.'), icon:'doc' }, false);
     return;
   }
 
@@ -703,7 +712,7 @@ export async function onSubmit(ev){
     else p.expenses.push(Object.assign({ id:uid('e') }, data));
     ui.expenseYear = data.date.slice(0, 4);
     save(); closeSheet(); render();
-    notify({ title: id ? 'Gider güncellendi' : 'Gider eklendi', body:data.cat+' · '+tl(data.amount), icon:'chart' }, false);
+    notify({ title: id ? t('Gider güncellendi') : t('Gider eklendi'), body:data.cat+' · '+tl(data.amount), icon:'chart' }, false);
     return;
   }
 
@@ -713,9 +722,9 @@ export async function onSubmit(ev){
       rooms: p.inspect.rooms.map(r => ({ n:r.n, note:'', shots:[], condition:'' })),
       deductions: [], tenantOk:false, landlordOk:false, refunded:null
     };
-    sysMsg(p, 'Çıkış süreci başlatıldı · '+fmtFull(parse(p.moveOut.date)));
+    sysMsg(p, (t('Çıkış süreci başlatıldı ·')+' ')+fmtFull(parse(p.moveOut.date)));
     save(); closeSheet(); render();
-    notify({ title:'Çıkış süreci başladı', body:'Odaları birlikte değerlendirip kesintileri onaylayın.', icon:'key' });
+    notify({ title:t('Çıkış süreci başladı'), body:t('Odaları birlikte değerlendirip kesintileri onaylayın.'), icon:'key' });
     return;
   }
 
@@ -729,9 +738,9 @@ export async function onSubmit(ev){
   if (type === 'refund'){
     const amount = Number(fd.get('amount')) || 0, date = String(fd.get('date'));
     p.moveOut.refunded = { amount, date };
-    sysMsg(p, 'Depozito iadesi yapıldı: '+tl(amount));
+    sysMsg(p, (t('Depozito iadesi yapıldı:')+' ')+tl(amount));
     save(); closeSheet(); render();
-    notify({ title:'İade kaydedildi', body:tl(amount)+' · '+fmtFull(parse(date))+'. Kiracıya bildirildi.', icon:'key' });
+    notify({ title:t('İade kaydedildi'), body:tl(amount)+' · '+fmtFull(parse(date))+t('. Kiracıya bildirildi.'), icon:'key' });
     return;
   }
 
@@ -742,7 +751,7 @@ export async function onSubmit(ev){
     if (newRent !== p.rent){
       const today = iso(t0());
       p.rentHistory = (p.rentHistory || []).filter(h => h.from !== today);
-      p.rentHistory.push({ from: today, amount: newRent, note:'Elle güncellendi' });
+      p.rentHistory.push({ from: today, amount: newRent, note:t('Elle güncellendi') });
     }
     p.value = Number(fd.get('value')) || null;
     p.dueDay = Math.min(28, Math.max(1, Number(fd.get('due')) || p.dueDay));
@@ -755,7 +764,7 @@ export async function onSubmit(ev){
     save();
     closeSheet();
     render();
-    notify({ title:'Kaydedildi', body:p.name+' bilgileri güncellendi.', icon:'home' }, false);
+    notify({ title:t('Kaydedildi'), body:p.name+(' '+t('bilgileri güncellendi.')), icon:'home' }, false);
   }
 }
 
@@ -783,17 +792,17 @@ export function onInput(ev){
     if (!out) return;
 
     if (ui.renewal.cpi == null){
-      out.innerHTML = 'Oranı girince yasal üst sınır burada görünür.';
+      out.innerHTML = t('Oranı girince yasal üst sınır burada görünür.');
     } else {
       const max = Math.round(p.rent * (1 + ui.renewal.cpi/100));
       if (n === 'cpi'){
-        out.innerHTML = 'Yasal üst sınır: <b>'+tl(max)+'</b> (+'+tl(max - p.rent)+')';
+        out.innerHTML = (t('Yasal üst sınır:')+' <b>')+tl(max)+'</b> (+'+tl(max - p.rent)+')';
         const am = document.querySelector('[data-input="amount"]');
         if (am && !ui.renewal.amount) am.value = max;
       } else if (ui.renewal.amount > max){
-        out.innerHTML = 'Önerdiğin tutar yasal üst sınırı ('+tl(max)+') aşıyor; teklif sınırla gönderilir.';
+        out.innerHTML = t('Önerdiğin tutar yasal üst sınırı (')+tl(max)+t(') aşıyor; teklif sınırla gönderilir.');
       } else {
-        out.innerHTML = 'Yasal üst sınır: <b>'+tl(max)+'</b> (+'+tl(max - p.rent)+')';
+        out.innerHTML = (t('Yasal üst sınır:')+' <b>')+tl(max)+'</b> (+'+tl(max - p.rent)+')';
       }
     }
     const sb = document.querySelector('[data-act="sendRenewal"]');
@@ -822,8 +831,8 @@ export async function onChangeField(ev){
     const p = P(d.pid), r = reqOf(p, d.id);
     r.cost = ev.target.value;
     r.costOk = false;
-    logReq(r, 'Masraf önerisi: '+r.cost);
-    sysMsg(p, 'Masraf önerisi: '+r.cost+' ('+r.title+')');
+    logReq(r, (t('Masraf önerisi:')+' ')+t(r.cost));
+    sysMsg(p, (t('Masraf önerisi:')+' ')+r.cost+' ('+r.title+')');
     save(); render();
     return;
   }
@@ -855,7 +864,7 @@ export async function onChangeField(ev){
     resetMoveOutApprovals(p);
     const ok = save();
     render();
-    if (!ok) notify({ title:'Yer kalmadı', body:'Tarayıcı depolaması doldu; fotoğraflar kaydedilemedi.', icon:'cam' }, false);
+    if (!ok) notify({ title:t('Yer kalmadı'), body:t('Tarayıcı depolaması doldu; fotoğraflar kaydedilemedi.'), icon:'cam' }, false);
     return;
   }
 
@@ -889,7 +898,7 @@ export async function onChangeField(ev){
     P(d.pid).inspect.landlordOk = false;
     const ok = save();
     render();
-    if (!ok) notify({ title:'Yer kalmadı', body:'Tarayıcı depolaması doldu; fotoğraflar kaydedilemedi.', icon:'cam' }, false);
+    if (!ok) notify({ title:t('Yer kalmadı'), body:t('Tarayıcı depolaması doldu; fotoğraflar kaydedilemedi.'), icon:'cam' }, false);
     return;
   }
 
@@ -902,9 +911,9 @@ export async function onChangeField(ev){
       replaceState(migrate(parsed));
       go('/kiraci', { replace:true });
       render();
-      notify({ title:'Veri yüklendi', body:'Dosyadaki durum geri yüklendi.', icon:'doc' }, false);
+      notify({ title:t('Veri yüklendi'), body:t('Dosyadaki durum geri yüklendi.'), icon:'doc' }, false);
     } catch(e){
-      notify({ title:'Dosya okunamadı', body:'Bu dosya Evim verisi gibi görünmüyor.', icon:'doc' }, false);
+      notify({ title:t('Dosya okunamadı'), body:t('Bu dosya Evim verisi gibi görünmüyor.'), icon:'doc' }, false);
     }
     ev.target.value = '';
   }
