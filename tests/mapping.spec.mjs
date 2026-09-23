@@ -119,3 +119,22 @@ test('yüklenmemiş görseller bulunur', () => {
   p.pay['2026-01'].photo = 'data:image/jpeg;base64,yy';
   expect(pendingMedia(p).length).toBe(2);
 });
+
+test('v4 alanları: mülk tipi, şirket, stopaj; eski "Ev sahibi" değeri yeni adla okunur', () => {
+  const r = rows();
+  Object.assign(r.prop, { prop_type:'Mağaza', area:'85', company:{ name:'Esnaf', taxNo:'1', taxOffice:'X' }, stopaj:true, deposit_kind:'Teminat mektubu',
+    aidat_payer:'Ev sahibi', bills:[{ n:'Su', who:'Ev sahibi' }], dask:null });
+  r.requests[0].cost = 'Ev sahibi';
+  const p = buildProperty(r);
+  expect(p).toMatchObject({ type:'Mağaza', area:85, stopaj:true, depositKind:'Teminat mektubu', aidatPayer:'Mülk sahibi', dask:null });
+  expect(p.company.name).toBe('Esnaf');
+  expect(p.bills[0].who).toBe('Mülk sahibi');
+  expect(p.requests[0].cost).toBe('Mülk sahibi');
+
+  // Geri yazarken yeni sütunlar da gider.
+  const next = clone(p);
+  next.type = 'Ofis'; next.stopaj = false; next.company = null;
+  const ops = diffProperty(p, next, { role:'landlord', meId:L });
+  const up = ops.find(o => o.table === 'properties');
+  expect(up.values).toMatchObject({ prop_type:'Ofis', stopaj:false, company:null });
+});

@@ -10,7 +10,7 @@ const screen = page => page.locator('#screen');
 /* ---- çoklu kiracı ---- */
 
 test('bir evde birden fazla kiracı: liste, ekleme, çıkarma', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/cihangir');
+  await open(page, '#/mulk-sahibi/mulk/cihangir');
   await expect(screen(page)).toContainText('Kiracılar');
   await expect(screen(page)).toContainText('[Ev arkadaşı]');
 
@@ -31,7 +31,7 @@ test('bir evde birden fazla kiracı: liste, ekleme, çıkarma', async ({ page })
 });
 
 test('ev arkadaşlarının mesajlarında gönderen adı görünür', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/cihangir/mesaj');
+  await open(page, '#/mulk-sahibi/mulk/cihangir/mesaj');
   await expect(page.locator('.bub.them .who').first()).toBeVisible();
   await expect(screen(page)).toContainText('[Ev arkadaşı]');
 });
@@ -39,7 +39,7 @@ test('ev arkadaşlarının mesajlarında gönderen adı görünür', async ({ pa
 /* ---- kira tutarı geçmişi ---- */
 
 test('yenileme kabul edilince kira geçmişine gelecek tarihli dönem eklenir', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/moda/odeme?s=yenileme');
+  await open(page, '#/mulk-sahibi/mulk/moda/odeme?s=yenileme');
   await page.fill('[data-input=cpi]', '40');
   await page.click('button:has-text("Teklifi kiracıya gönder")');
   await open(page, '#/kiraci/odemeler');
@@ -53,17 +53,17 @@ test('yenileme kabul edilince kira geçmişine gelecek tarihli dönem eklenir', 
 });
 
 test('elle kira değişikliği geçmişe bugünden itibaren yazılır', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/atasehir?s=ev-duzenle');
+  await open(page, '#/mulk-sahibi/mulk/atasehir?s=ev-duzenle');
   await sheet(page).locator('input[name=rent]').fill('30000');
   await sheet(page).locator('button:has-text("Kaydet")').click();
-  await open(page, '#/ev-sahibi/ev/atasehir/odeme');
+  await open(page, '#/mulk-sahibi/mulk/atasehir/odeme');
   const card = page.locator('section:has(h2:text("Kira tutarı geçmişi"))');
   await expect(card).toContainText('₺30.000');
   await expect(card).toContainText('Elle güncellendi');
 });
 
 test('süresi dolan sözleşme bir yıl uzar ve yeni kira devreye girer', async ({ page }) => {
-  await open(page, '#/ev-sahibi');
+  await open(page, '#/mulk-sahibi');
   const r = await page.evaluate(async () => {
     const st = await import('./assets/js/state.js');
     const lg = await import('./assets/js/logic.js');
@@ -82,7 +82,7 @@ test('süresi dolan sözleşme bir yıl uzar ve yeni kira devreye girer', async 
 /* ---- gider defteri ---- */
 
 test('gider ekle, düzenle, sil; net getiri güncellenir', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/atasehir/gider');
+  await open(page, '#/mulk-sahibi/mulk/atasehir/gider');
   const net0 = await page.locator('#screen .hero .big').innerText();
 
   await page.click('button:has-text("Gider ekle")');
@@ -108,7 +108,7 @@ test('gider ekle, düzenle, sil; net getiri güncellenir', async ({ page }) => {
 /* ---- usta ve teklifler ---- */
 
 test('teklif ekle, seç; fatura gider defterine işlenir', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/cihangir/talep');
+  await open(page, '#/mulk-sahibi/mulk/cihangir/talep');
   await page.click('.card:has-text("aspiratör")');
   await sheet(page).locator('button:has-text("Teklif")').click();
   await sheet(page).locator('input[name=vendor]').fill('Hızlı Tamir');
@@ -121,12 +121,12 @@ test('teklif ekle, seç; fatura gider defterine işlenir', async ({ page }) => {
   await expect(sheet(page).locator('.steplbl .on')).toHaveText('İşlemde');
 
   // Masrafı ev sahibine al, sonra faturayı işle.
-  await sheet(page).locator('select[data-input=cost]').selectOption('Ev sahibi');
+  await sheet(page).locator('select[data-input=cost]').selectOption('Mülk sahibi');
   await sheet(page).locator('button:has-text("Fatura ekle")').click();
   await expect(sheet(page).locator('input[name=amount]')).toHaveValue('1750');
   await sheet(page).locator('button:has-text("Kaydet")').click();
 
-  await open(page, '#/ev-sahibi/ev/cihangir/gider');
+  await open(page, '#/mulk-sahibi/mulk/cihangir/gider');
   await expect(screen(page)).toContainText('Banyo aspiratörü değişimi');
   await expect(screen(page)).toContainText('talebe bağlı');
 });
@@ -141,7 +141,7 @@ test('kiracı teklifleri görür ama seçemez', async ({ page }) => {
 /* ---- çıkış ve depozito ---- */
 
 test('çıkış süreci: karşılaştırma, kesinti, iki taraf onayı, iade', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/atasehir/cikis');
+  await open(page, '#/mulk-sahibi/mulk/atasehir/cikis');
   await page.click('button:has-text("Çıkış sürecini başlat")');
   await sheet(page).locator('button:has-text("Başlat")').click();
   await expect(screen(page)).toContainText('Oda oda karşılaştırma');
@@ -172,7 +172,7 @@ test('çıkış süreci: karşılaştırma, kesinti, iki taraf onayı, iade', as
     st.S.props.atasehir.moveOut.tenantOk = true;
     st.save();
   });
-  await open(page, '#/ev-sahibi/ev/atasehir/cikis');
+  await open(page, '#/mulk-sahibi/mulk/atasehir/cikis');
   await page.click('button:has-text("İadeyi yaptım")');
   await expect(sheet(page).locator('input[name=amount]')).toHaveValue('23000');
   await sheet(page).locator('button:has-text("Kaydet")').click();
@@ -184,7 +184,7 @@ test('çıkış süreci: karşılaştırma, kesinti, iki taraf onayı, iade', as
 });
 
 test('kesinti değişince onaylar sıfırlanır', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/moda/cikis');
+  await open(page, '#/mulk-sahibi/mulk/moda/cikis');
   await page.click('button:has-text("Çıkış sürecini başlat")');
   await sheet(page).locator('button:has-text("Başlat")').click();
   await page.click('button:has-text("Hesabı onayla")');
@@ -197,7 +197,7 @@ test('kesinti değişince onaylar sıfırlanır', async ({ page }) => {
 });
 
 test('kiracı çıkış sürecini görür, kesinti ekleyemez', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/moda/cikis');
+  await open(page, '#/mulk-sahibi/mulk/moda/cikis');
   await page.click('button:has-text("Çıkış sürecini başlat")');
   await sheet(page).locator('button:has-text("Başlat")').click();
   await open(page, '#/kiraci');
@@ -210,7 +210,7 @@ test('kiracı çıkış sürecini görür, kesinti ekleyemez', async ({ page }) 
 /* ---- rapor ve vergi ---- */
 
 test('rapor net getiriyi ve vergi tahminini gösterir', async ({ page }) => {
-  await open(page, '#/ev-sahibi/rapor');
+  await open(page, '#/mulk-sahibi/rapor');
   await expect(screen(page)).toContainText('net kira getirisi');
   await expect(screen(page)).toContainText('Vergi tahmini');
   await expect(screen(page)).toContainText('Götürü gider');
@@ -226,7 +226,7 @@ test('rapor net getiriyi ve vergi tahminini gösterir', async ({ page }) => {
 });
 
 test('beyanname özeti vergi karşılaştırmasını içerir', async ({ page }) => {
-  await open(page, '#/ev-sahibi/rapor');
+  await open(page, '#/mulk-sahibi/rapor');
   await page.click('button:has-text("Beyanname özeti oluştur")');
   await expect(page.locator('#txtOut')).toHaveValue(/Tahmini vergi|istisna tutarının altında/);
   await expect(page.locator('#txtOut')).toHaveValue(/Toplam belgeli gider/);

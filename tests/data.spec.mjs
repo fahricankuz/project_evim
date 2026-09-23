@@ -38,11 +38,11 @@ test('ilk prototipin verisi kaybolmadan taşınır', async ({ page }) => {
       sessionStorage.setItem('seeded', '1');
     }
   }, v1Fixture());
-  await open(page, '#/ev-sahibi');
+  await open(page, '#/mulk-sahibi');
   await expect(page.locator('#screen')).toContainText('Eski kayıt evi');
-  await open(page, '#/ev-sahibi/ev/ev1/talep');
+  await open(page, '#/mulk-sahibi/mulk/ev1/talep');
   await expect(page.locator('#screen')).toContainText('Eski talep kaydı');
-  await open(page, '#/ev-sahibi/ev/ev1/belge');
+  await open(page, '#/mulk-sahibi/mulk/ev1/belge');
   await expect(page.locator('#screen')).toContainText('eski_sozlesme.pdf');
 
   const stored = await page.evaluate(() => ({
@@ -65,7 +65,7 @@ test('daha yeni sürümün verisi üzerine yazılmaz', async ({ page }) => {
       sessionStorage.setItem('seeded', '1');
     }
   }, future);
-  await open(page, '#/ev-sahibi');
+  await open(page, '#/mulk-sahibi');
   await expect(page.locator('#banners')).toContainText('Salt okunur');
   await page.click('.shell button:has-text("Koyu")');
   const v = await page.evaluate(() => JSON.parse(localStorage.getItem('evim')).v);

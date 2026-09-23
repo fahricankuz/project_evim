@@ -1,6 +1,7 @@
 /* Hash tabanlı yönlendirme.
    Her ekranın bir adresi var; geri/ileri, yenileme ve derin link çalışır.
-   Örnek: #/ev-sahibi/ev/moda/odeme?s=dekont&key=2026-09 */
+   Örnek: #/mulk-sahibi/mulk/moda/odeme?s=dekont&key=2026-09
+   Eski adresler (#/ev-sahibi/ev/…) yeni karşılıklarına yönlenir. */
 
 import { t } from './i18n.js';
 import { S, ui } from './state.js';
@@ -31,7 +32,7 @@ const LANDLORD_TABS = {
 };
 
 export const TENANT_PATH = { panel:'/kiraci', pay:'/kiraci/odemeler', req:'/kiraci/talepler', msg:'/kiraci/mesajlar', docs:'/kiraci/belgeler', agenda:'/kiraci/takvim' };
-export const LANDLORD_PATH = { portfolio:'/ev-sahibi', lreq:'/ev-sahibi/talepler', lmsg:'/ev-sahibi/mesajlar', report:'/ev-sahibi/rapor', agenda:'/ev-sahibi/takvim' };
+export const LANDLORD_PATH = { portfolio:'/mulk-sahibi', lreq:'/mulk-sahibi/talepler', lmsg:'/mulk-sahibi/mesajlar', report:'/mulk-sahibi/rapor', agenda:'/mulk-sahibi/takvim' };
 
 export const PROP_SUBS = [['ozet',t('Özet')],['odeme',t('Ödemeler')],['talep',t('Talepler')],['mesaj',t('Mesajlar')],['belge',t('Belgeler')],['tutanak',t('Tutanak')],['gider',t('Giderler')]];
 /** Şeritte görünmeyen ama adresle açılan bölümler. */
@@ -56,8 +57,13 @@ function buildQuery(params){
 }
 
 /** Geçerli hash'i rota nesnesine çevirir; tanınmayan adres kiracı paneline düşer. */
+/** Eski (v3) adresleri yenisine çevirir: /ev-sahibi/ev/x → /mulk-sahibi/mulk/x */
+export function canonical(h){
+  return h.replace(/^\/ev-sahibi(\/ev(?=\/|$))?/, (m, e) => '/mulk-sahibi' + (e ? '/mulk' : ''));
+}
+
 export function parseRoute(hash){
-  let h = String(hash || '').replace(/^#/, '');
+  let h = canonical(String(hash || '').replace(/^#/, ''));
   if (!h || h === '/') h = '/kiraci';
   const qi = h.indexOf('?');
   const path = (qi < 0 ? h : h.slice(0, qi)).replace(/\/+$/,'') || '/kiraci';
@@ -75,9 +81,9 @@ export function parseRoute(hash){
     return r;
   }
 
-  if (seg[0] === 'ev-sahibi'){
+  if (seg[0] === 'mulk-sahibi'){
     r.role = 'landlord';
-    if (seg[1] === 'ev'){
+    if (seg[1] === 'mulk'){
       r.tab = 'portfolio';
       r.pid = S.props[seg[2]] ? seg[2] : S.order[0];
       r.sub = PROP_SUBS.some(s => s[0] === seg[3]) || EXTRA_SUBS.includes(seg[3]) ? seg[3] : 'ozet';
@@ -148,12 +154,14 @@ export function setParams(patch, opts = { replace:true }){
 
 export function back(){
   if (pushes > 0){ pushes--; history.back(); }
-  else go(ui.role === 'landlord' ? '/ev-sahibi' : '/kiraci', { replace:true });
+  else go(ui.role === 'landlord' ? '/mulk-sahibi' : '/kiraci', { replace:true });
 }
 
 export function onChange(fn){ listeners.push(fn); }
 
 function sync(){
+  const legacy = canonical(location.hash.slice(1));
+  if ('#' + legacy !== location.hash) history.replaceState(null, '', '#' + legacy);
   route = parseRoute(location.hash);
   const redirect = guard.fn && guard.fn(route);
   if (redirect && redirect !== route.path){
@@ -187,12 +195,12 @@ export function screenMap(){
     { label:t('Takvim'), path:'/kiraci/takvim', icon:'calendar' }
   ];
   const landlord = [
-    { label:t('Portföy'), path:'/ev-sahibi', icon:'grid' },
-    ...S.order.map(id => ({ label:S.props[id].name, path:'/ev-sahibi/ev/'+id, icon:'home', depth:1 })),
-    { label:t('Tüm talepler'), path:'/ev-sahibi/talepler', icon:'wrench' },
-    { label:t('Mesajlar'), path:'/ev-sahibi/mesajlar', icon:'chat' },
-    { label:t('Takvim'), path:'/ev-sahibi/takvim', icon:'calendar' },
-    { label:t('Rapor'), path:'/ev-sahibi/rapor', icon:'chart' }
+    { label:t('Portföy'), path:'/mulk-sahibi', icon:'grid' },
+    ...S.order.map(id => ({ label:S.props[id].name, path:'/mulk-sahibi/mulk/'+id, icon:'home', depth:1 })),
+    { label:t('Tüm talepler'), path:'/mulk-sahibi/talepler', icon:'wrench' },
+    { label:t('Mesajlar'), path:'/mulk-sahibi/mesajlar', icon:'chat' },
+    { label:t('Takvim'), path:'/mulk-sahibi/takvim', icon:'calendar' },
+    { label:t('Rapor'), path:'/mulk-sahibi/rapor', icon:'chart' }
   ];
   return { tenant, landlord };
 }

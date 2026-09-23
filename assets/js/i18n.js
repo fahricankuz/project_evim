@@ -42,6 +42,8 @@ export function locale(){ return lang === 'en' ? 'en-GB' : 'tr-TR'; }
  * @param {object} [vars]
  */
 export function t(s, vars){
+  if (s == null) return '';
+  s = String(s);
   // 'Ara|telefon': aynı Türkçe metnin farklı anlamları için bağlam etiketi.
   let out = s.includes('|') ? s.slice(0, s.indexOf('|')) : s;
   if (lang !== 'tr' && s){

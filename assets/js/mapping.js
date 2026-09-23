@@ -54,20 +54,22 @@ export function buildProperty(d){
     id: pr.id,
     ownerId: pr.owner_id,
     name: pr.name, addr: pr.addr || '',
-    landlord: { name: (ownerMember && nameOf(ownerMember)) || ownerProfile.name || 'Ev sahibi', phone: ownerMember?.phone || ownerProfile.phone || '' },
+    type: pr.prop_type || 'Konut', area: num(pr.area),
+    company: pr.company || null, stopaj: !!pr.stopaj, depositKind: pr.deposit_kind || 'Nakit',
+    landlord: { name: (ownerMember && nameOf(ownerMember)) || ownerProfile.name || 'Mülk sahibi', phone: ownerMember?.phone || ownerProfile.phone || '' },
     tenants,
     rent: num(pr.rent), dueDay: pr.due_day,
-    aidat: num(pr.aidat) || 0, aidatPayer: pr.aidat_payer || 'Kiracı',
+    aidat: num(pr.aidat) || 0, aidatPayer: owner(pr.aidat_payer) || 'Kiracı',
     deposit: num(pr.deposit) || 0, depositNote: pr.deposit_note || '',
-    startDate: pr.start_date, contractEnd: pr.contract_end, dask: pr.dask || pr.contract_end,
+    startDate: pr.start_date, contractEnd: pr.contract_end, dask: pr.dask || null,
     value: num(pr.value),
-    bills: pr.bills || [],
+    bills: (pr.bills || []).map(b => Object.assign({}, b, { who: owner(b.who) })),
     pay,
     rentHistory: (d.history || []).map(h => ({ from: h.from_date, amount: num(h.amount), note: h.note || '' }))
       .sort((a, b) => a.from < b.from ? -1 : 1),
     requests: (d.requests || []).map(r => ({
       id: r.id, cat: r.cat, title: r.title, desc: r.descr || '', urgency: r.urgency, status: r.status,
-      cost: r.cost, costOk: !!r.cost_ok, decision: r.decision || null, date: r.req_date,
+      cost: owner(r.cost), costOk: !!r.cost_ok, decision: r.decision || null, date: r.req_date,
       photos: r.photos || 0, shots: r.shots || [], log: r.log || [], quotes: r.quotes || [], invoice: r.invoice || null
     })).sort((a, b) => a.date === b.date ? (a.id < b.id ? 1 : -1) : (a.date < b.date ? 1 : -1)),
     msgs: (d.messages || []).map(m => clean({
@@ -85,6 +87,9 @@ export function buildProperty(d){
   };
 }
 
+/** Eski kayıtlardaki "Ev sahibi" değeri (v3 öncesi) yeni adıyla okunur. */
+function owner(v){ return v === 'Ev sahibi' ? 'Mülk sahibi' : v; }
+
 function clean(o){
   Object.keys(o).forEach(k => o[k] === undefined && delete o[k]);
   return o;
@@ -97,6 +102,8 @@ function clean(o){
 export function propertyRow(p, ownerId){
   return {
     id: p.id, owner_id: ownerId || p.ownerId, name: p.name, addr: p.addr || '',
+    prop_type: p.type || 'Konut', area: p.area ?? null, company: p.company || null,
+    stopaj: !!p.stopaj, deposit_kind: p.depositKind || 'Nakit',
     rent: p.rent, due_day: p.dueDay, aidat: p.aidat || 0, aidat_payer: p.aidatPayer || 'Kiracı',
     deposit: p.deposit || 0, deposit_note: p.depositNote || '',
     start_date: p.startDate, contract_end: p.contractEnd, dask: p.dask || null,

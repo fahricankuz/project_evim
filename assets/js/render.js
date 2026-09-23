@@ -73,7 +73,7 @@ export function softRender(){
 
 const TENANT_TITLES = { panel:t('Panel'), pay:t('Ödemeler'), req:t('Talepler'), msg:t('Mesajlar'), docs:t('Belgeler'), agenda:t('Takvim') };
 const LANDLORD_TITLES = { portfolio:t('Portföy'), lreq:t('Talepler'), lmsg:t('Mesajlar'), report:t('Rapor'), agenda:t('Takvim') };
-const AUTH_TITLES = { giris:t('Giriş yap'), kayit:t('Kayıt'), sifre:t('Şifre sıfırlama'), 'yeni-sifre':t('Yeni şifre'), katil:t('Davet'), davet:t('Eve bağlan') };
+const AUTH_TITLES = { giris:t('Giriş yap'), kayit:t('Kayıt'), sifre:t('Şifre sıfırlama'), 'yeni-sifre':t('Yeni şifre'), katil:t('Davet'), davet:t('Mülke bağlan') };
 
 function titleFor(route, authView){
   if (authView) return (AUTH_TITLES[route.auth] || t('Giriş yap')) + (' '+t('· Evim'));

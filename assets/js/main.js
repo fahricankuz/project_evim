@@ -49,7 +49,7 @@ document.addEventListener('change', onChangeField);
 
 const TAB_KEYS = {
   tenant:['/kiraci','/kiraci/odemeler','/kiraci/talepler','/kiraci/mesajlar','/kiraci/belgeler'],
-  landlord:['/ev-sahibi','/ev-sahibi/talepler','/ev-sahibi/mesajlar','/ev-sahibi/takvim','/ev-sahibi/rapor']
+  landlord:['/mulk-sahibi','/mulk-sahibi/talepler','/mulk-sahibi/mesajlar','/mulk-sahibi/takvim','/mulk-sahibi/rapor']
 };
 
 document.addEventListener('keydown', ev => {
@@ -145,7 +145,7 @@ if (!LIVE && !S.seenHint){
   save();
   setTimeout(() => notify({
     title:t('Hoş geldin'),
-    body:t('Üstteki hapla kiracı ve ev sahibi görünümleri arasında geçebilirsin. Rehberli tur için ayarlara bak.'),
+    body:t('Üstteki hapla kiracı ve mülk sahibi görünümleri arasında geçebilirsin. Rehberli tur için ayarlara bak.'),
     icon:'home',
     actions:[{ label:t('Rehberli tur'), run:() => A.startTour() }]
   }, false), 700);

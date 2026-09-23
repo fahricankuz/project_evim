@@ -91,10 +91,10 @@ onay penceresi ister.
 | `#/kiraci/mesajlar` | Yazışma |
 | `#/kiraci/belgeler` | Belgeler (`/tutanak`, `/cikis`) |
 | `#/kiraci/takvim` | Yaklaşan işler |
-| `#/ev-sahibi` | Portföy |
-| `#/ev-sahibi/ev/<ev>/<bölüm>` | `ozet`, `odeme`, `talep`, `mesaj`, `belge`, `tutanak`, `gider`, `cikis` |
-| `#/ev-sahibi/talepler`, `/mesajlar`, `/takvim` | Tüm evler |
-| `#/ev-sahibi/rapor` | Net getiri, vergi tahmini, CSV |
+| `#/mulk-sahibi` | Portföy |
+| `#/mulk-sahibi/mulk/<ev>/<bölüm>` | `ozet`, `odeme`, `talep`, `mesaj`, `belge`, `tutanak`, `gider`, `cikis` |
+| `#/mulk-sahibi/talepler`, `/mesajlar`, `/takvim` | Tüm evler |
+| `#/mulk-sahibi/rapor` | Net getiri, vergi tahmini, CSV |
 
 Alt sayfalar da adreste taşınır (`?s=talep&pid=moda&id=r1`), böylece geri tuşu
 onları kapatır ve bağlantısı paylaşılabilir.

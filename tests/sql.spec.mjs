@@ -104,8 +104,8 @@ test('davet koduyla kiracı katılır; yabancı evi göremez', async () => {
 test('kiracı dekont yükler ama onaylayamaz; ev sahibi onaylar; bildirimler iki yöne gider', async () => {
   await as(T1);
   await db.query(`insert into public.payments (property_id, month, status, amount, receipt_name) values ('p1', '2026-01', 'review', 30000, 'd.pdf')`);
-  await expect(db.query(`update public.payments set status = 'approved' where property_id = 'p1' and month = '2026-01'`)).rejects.toThrow(/yalnızca ev sahibi/);
-  await expect(db.query(`insert into public.payments (property_id, month, status, amount) values ('p1', '2026-02', 'approved', 1)`)).rejects.toThrow(/yalnızca ev sahibi/);
+  await expect(db.query(`update public.payments set status = 'approved' where property_id = 'p1' and month = '2026-01'`)).rejects.toThrow(/yalnızca mülk sahibi/);
+  await expect(db.query(`insert into public.payments (property_id, month, status, amount) values ('p1', '2026-02', 'approved', 1)`)).rejects.toThrow(/yalnızca mülk sahibi/);
 
   await as(L);
   await db.query(`update public.payments set status = 'approved', approved_at = now() where property_id = 'p1' and month = '2026-01'`);
@@ -133,11 +133,11 @@ test('talepler: kiracı açar ve kapatır, masrafa dokunamaz', async () => {
   expect((await notes(L)).some(n => /yeni talep/.test(n.title))).toBe(true);
 
   await as(T1);
-  await expect(db.query(`update public.requests set cost = 'Kiracı' where id = 'r1'`)).rejects.toThrow(/yalnızca ev sahibi/);
+  await expect(db.query(`update public.requests set cost = 'Kiracı' where id = 'r1'`)).rejects.toThrow(/yalnızca mülk sahibi/);
   await expect(db.query(`update public.requests set status = 2 where id = 'r1'`)).rejects.toThrow(/yalnızca kapatabilir/);
 
   await as(L);
-  await db.query(`update public.requests set status = 2, cost = 'Ev sahibi' where id = 'r1'`);
+  await db.query(`update public.requests set status = 2, cost = 'Mülk sahibi' where id = 'r1'`);
   await as(T1);
   await db.query(`update public.requests set cost_ok = true, status = 3 where id = 'r1'`);
   // Ev sahibinin güncellemesi kiracıya gider; kiracının kapatması ev sahibine ve ev arkadaşına.
@@ -165,7 +165,7 @@ test('çıkış süreci: kimse karşı tarafın onayını veremez, kiracı kesin
 
   await as(T1);
   await expect(db.query(`update public.property_shared set move_out = jsonb_set(move_out, '{landlordOk}', 'true') where property_id = 'p1'`)).rejects.toThrow(/karşı tarafın/i);
-  await expect(db.query(`update public.property_shared set move_out = jsonb_set(move_out, '{deductions}', '[{"label":"x","amount":1}]') where property_id = 'p1'`)).rejects.toThrow(/yalnızca ev sahibi/);
+  await expect(db.query(`update public.property_shared set move_out = jsonb_set(move_out, '{deductions}', '[{"label":"x","amount":1}]') where property_id = 'p1'`)).rejects.toThrow(/yalnızca mülk sahibi/);
   await db.query(`update public.property_shared set move_out = jsonb_set(move_out, '{tenantOk}', 'true') where property_id = 'p1'`);
 
   await as(L);
@@ -241,4 +241,28 @@ test('kullanıcı kendi bildirimlerini silebilir, başkasınınkini göremez', a
   expect((await q(`select count(*)::int c from public.notifications`))[0].c).toBe(0);
   await as(null);
   expect((await q(`select count(*)::int c from public.notifications where user_id = $1`, [L]))[0].c).toBeGreaterThan(0);
+});
+
+test('v4: mülk tipi, şirket kiracı ve stopaj saklanır; geçersiz tip reddedilir', async () => {
+  await as(L);
+  await db.query(`insert into public.properties (id, owner_id, name, rent, due_day, prop_type, area, company, stopaj, deposit_kind)
+                  values ('pofis', $1, 'Ofis', 60000, 5, 'Ofis', 140, '{"name":"Örnek A.Ş.","taxNo":"1"}', true, 'Teminat mektubu')`, [L]);
+  const [row] = await q(`select prop_type, area::int area, company->>'name' co, stopaj, deposit_kind from public.properties where id = 'pofis'`);
+  expect(row).toEqual({ prop_type:'Ofis', area:140, co:'Örnek A.Ş.', stopaj:true, deposit_kind:'Teminat mektubu' });
+  await expect(db.query(`update public.properties set prop_type = 'Villa' where id = 'pofis'`)).rejects.toThrow();
+  // Eski kurulumdan gelen satır varsayılan olarak konuttur.
+  expect((await q(`select prop_type from public.properties where id = 'p1'`))[0].prop_type).toBe('Konut');
+});
+
+test('v4 veri güncellemesi "Ev sahibi" değerini bildirim üretmeden yeniler', async () => {
+  await as(null);
+  await db.query(`alter table public.requests disable trigger on_request_change`);
+  await db.query(`update public.requests set cost = 'Ev sahibi' where id = 'r1'`);
+  await db.query(`alter table public.requests enable trigger on_request_change`);
+  await db.query(`update public.properties set bills = '[{"n":"Su","who":"Ev sahibi"}]', aidat_payer = 'Ev sahibi' where id = 'p1'`);
+  const before = (await q(`select count(*)::int c from public.notifications`))[0].c;
+  await db.exec(SCHEMA);
+  expect((await q(`select cost from public.requests where id = 'r1'`))[0].cost).toBe('Mülk sahibi');
+  expect(await q(`select aidat_payer, bills from public.properties where id = 'p1'`)).toEqual([{ aidat_payer:'Mülk sahibi', bills:[{ n:'Su', who:'Mülk sahibi' }] }]);
+  expect((await q(`select count(*)::int c from public.notifications`))[0].c).toBe(before);
 });

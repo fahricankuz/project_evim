@@ -51,6 +51,18 @@ create table if not exists public.properties (
   updated_at    timestamptz not null default now()
 );
 
+-- v4: mülk tipi (Konut/Ofis/Mağaza/Depo), alan, kiracı şirket bilgisi,
+-- kira stopajı ve depozito türü. Eski kurulumlarda sütunlar sonradan eklenir.
+alter table public.properties add column if not exists prop_type    text not null default 'Konut';
+alter table public.properties add column if not exists area         numeric;
+alter table public.properties add column if not exists company      jsonb;
+alter table public.properties add column if not exists stopaj       boolean not null default false;
+alter table public.properties add column if not exists deposit_kind text not null default 'Nakit';
+alter table public.properties drop constraint if exists properties_prop_type_check;
+alter table public.properties add constraint properties_prop_type_check check (prop_type in ('Konut','Ofis','Mağaza','Depo'));
+alter table public.properties drop constraint if exists properties_deposit_kind_check;
+alter table public.properties add constraint properties_deposit_kind_check check (deposit_kind in ('Nakit','Teminat mektubu'));
+
 -- İki tarafın da düzenlediği alanlar ayrı tabloda: kiracı kiraya dokunamaz ama
 -- tutanağı, çıkış sürecini ve yenileme yanıtını güncelleyebilir.
 create table if not exists public.property_shared (
@@ -349,7 +361,7 @@ declare r text := public.member_role(new.property_id);
 begin
   if auth.uid() is null or r = 'landlord' then return new; end if;
   if new.status in ('approved','rejected') and (tg_op = 'INSERT' or old.status is distinct from new.status) then
-    raise exception 'Ödemeyi yalnızca ev sahibi onaylayabilir ya da reddedebilir' using errcode = '42501';
+    raise exception 'Ödemeyi yalnızca mülk sahibi onaylayabilir ya da reddedebilir' using errcode = '42501';
   end if;
   if tg_op = 'UPDATE' and old.status = 'approved' then
     raise exception 'Onaylanmış ödeme değiştirilemez' using errcode = '42501';
@@ -370,7 +382,7 @@ begin
      or new.decision is distinct from old.decision
      or new.quotes is distinct from old.quotes
      or new.invoice is distinct from old.invoice then
-    raise exception 'Masraf, karar, teklif ve faturayı yalnızca ev sahibi değiştirebilir' using errcode = '42501';
+    raise exception 'Masraf, karar, teklif ve faturayı yalnızca mülk sahibi değiştirebilir' using errcode = '42501';
   end if;
   if new.status <> old.status and new.status <> 3 then
     raise exception 'Kiracı talebi yalnızca kapatabilir' using errcode = '42501';
@@ -405,7 +417,7 @@ begin
     if r = 'tenant' then
       if (new.move_out -> 'deductions') is distinct from (old.move_out -> 'deductions')
          or (new.move_out -> 'refunded') is distinct from (old.move_out -> 'refunded') then
-        raise exception 'Kesinti ve iadeyi yalnızca ev sahibi girebilir' using errcode = '42501';
+        raise exception 'Kesinti ve iadeyi yalnızca mülk sahibi girebilir' using errcode = '42501';
       end if;
     end if;
   end if;
@@ -413,7 +425,7 @@ begin
     null; -- kiracı da çıkış sürecini başlatabilir
   end if;
   if r = 'tenant' and old.move_out is not null and new.move_out is null then
-    raise exception 'Çıkış sürecini yalnızca ev sahibi iptal edebilir' using errcode = '42501';
+    raise exception 'Çıkış sürecini yalnızca mülk sahibi iptal edebilir' using errcode = '42501';
   end if;
 
   if r = 'tenant' and new.renewal is distinct from old.renewal then
@@ -577,7 +589,7 @@ create or replace function public.on_payment_change()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
   pname text := public.prop_name(new.property_id);
-  lurl  text := '#/ev-sahibi/ev/' || new.property_id || '/odeme';
+  lurl  text := '#/mulk-sahibi/mulk/' || new.property_id || '/odeme';
 begin
   if new.status in ('review','partial')
      and (tg_op = 'INSERT' or old.status is distinct from new.status or old.amount is distinct from new.amount) then
@@ -589,7 +601,7 @@ begin
       new.month || ' kirası onaylandı.', '#/kiraci/odemeler', lurl);
   elsif new.status = 'rejected' and (tg_op = 'INSERT' or old.status is distinct from 'rejected') then
     perform public.notify_members(new.property_id, 'tenant', 'Dekont reddedildi',
-      coalesce(new.reject_reason, 'Ev sahibi dekontu onaylamadı.'), '#/kiraci/odemeler', lurl);
+      coalesce(new.reject_reason, 'Mülk sahibi dekontu onaylamadı.'), '#/kiraci/odemeler', lurl);
   end if;
   return new;
 end $$;
@@ -602,7 +614,7 @@ returns trigger language plpgsql security definer set search_path = public as $$
 declare
   steps text[] := array['Açıldı','Görüldü','İşlemde','Çözüldü'];
   turl  text := '#/kiraci/talepler/' || new.id;
-  lurl  text := '#/ev-sahibi/ev/' || new.property_id || '/talep?s=talep&id=' || new.id;
+  lurl  text := '#/mulk-sahibi/mulk/' || new.property_id || '/talep?s=talep&id=' || new.id;
 begin
   if tg_op = 'INSERT' then
     perform public.notify_members(new.property_id, 'landlord', public.prop_name(new.property_id) || ': yeni talep',
@@ -627,7 +639,7 @@ begin
   if new.from_role = 'system' then return new; end if;
   select display_name into sender from public.memberships where property_id = new.property_id and user_id = new.by_user;
   perform public.notify_members(new.property_id, null, coalesce(nullif(sender, ''), 'Yeni mesaj'), new.body,
-    '#/kiraci/mesajlar', '#/ev-sahibi/ev/' || new.property_id || '/mesaj', new.by_user);
+    '#/kiraci/mesajlar', '#/mulk-sahibi/mulk/' || new.property_id || '/mesaj', new.by_user);
   return new;
 end $$;
 drop trigger if exists on_message on public.messages;
@@ -640,14 +652,14 @@ declare
   pname text := public.prop_name(new.property_id);
   p     public.properties;
   cikis_t text := '#/kiraci/belgeler/cikis';
-  cikis_l text := '#/ev-sahibi/ev/' || new.property_id || '/cikis';
+  cikis_l text := '#/mulk-sahibi/mulk/' || new.property_id || '/cikis';
 begin
   -- Yenileme teklifi
   if (new.renewal ->> 'status') is distinct from (old.renewal ->> 'status') then
     if new.renewal ->> 'status' = 'sent' then
       perform public.notify_members(new.property_id, 'tenant', 'Yenileme teklifi geldi',
         'Yeni dönem için ' || public.fmt_tl((new.renewal ->> 'amount')::numeric) || ' önerildi.', '#/kiraci/odemeler',
-        '#/ev-sahibi/ev/' || new.property_id || '/odeme');
+        '#/mulk-sahibi/mulk/' || new.property_id || '/odeme');
     elsif new.renewal ->> 'status' = 'accepted' then
       -- Kabul edilen tutar sözleşme bitişinden itibaren geçerli olur.
       select * into p from public.properties where id = new.property_id;
@@ -657,7 +669,7 @@ begin
       on conflict (id) do update set amount = excluded.amount, note = excluded.note;
       perform public.notify_members(new.property_id, 'landlord', pname || ': teklif kabul edildi',
         public.fmt_tl((new.renewal ->> 'amount')::numeric) || ' yeni dönem kirası olarak kabul edildi.',
-        '#/kiraci/odemeler', '#/ev-sahibi/ev/' || new.property_id || '/odeme');
+        '#/kiraci/odemeler', '#/mulk-sahibi/mulk/' || new.property_id || '/odeme');
     end if;
   end if;
 
@@ -724,7 +736,7 @@ begin
         values (mb.user_id, p.id,
                 case when mb.role = 'tenant' then 'Kira gecikti' else p.name || ': kira gecikti' end,
                 to_char(due, 'DD.MM.YYYY') || ' vadeli kira ' || (today - due) || ' gündür ödenmedi.',
-                case when mb.role = 'tenant' then '#/kiraci/odemeler' else '#/ev-sahibi/ev/' || p.id || '/odeme' end,
+                case when mb.role = 'tenant' then '#/kiraci/odemeler' else '#/mulk-sahibi/mulk/' || p.id || '/odeme' end,
                 'rent-late-' || p.id)
         on conflict do nothing;
       end if;
@@ -734,7 +746,7 @@ begin
         insert into public.notifications (user_id, property_id, title, body, url, tag)
         values (mb.user_id, p.id, p.name || ': sözleşme yenileme',
                 'Sözleşme ' || to_char(p.contract_end, 'DD.MM.YYYY') || ' tarihinde yenileniyor (' || (p.contract_end - today) || ' gün).',
-                case when mb.role = 'tenant' then '#/kiraci/odemeler' else '#/ev-sahibi/ev/' || p.id || '/odeme' end,
+                case when mb.role = 'tenant' then '#/kiraci/odemeler' else '#/mulk-sahibi/mulk/' || p.id || '/odeme' end,
                 'renew-' || p.id)
         on conflict do nothing;
       end if;
@@ -745,7 +757,7 @@ begin
         insert into public.notifications (user_id, property_id, title, body, url, tag)
         values (mb.user_id, p.id, p.name || ': DASK yenileme',
                 'Poliçe ' || to_char(p.dask, 'DD.MM.YYYY') || ' tarihinde bitiyor.',
-                '#/ev-sahibi/ev/' || p.id || '/belge', 'dask-' || p.id)
+                '#/mulk-sahibi/mulk/' || p.id || '/belge', 'dask-' || p.id)
         on conflict do nothing;
       end if;
     end loop;
@@ -755,7 +767,7 @@ begin
   insert into public.notifications (user_id, property_id, title, body, url, tag)
   select m.user_id, d.property_id, 'Tahliye tarihi yaklaşıyor',
          'Taahhütnamedeki tarih: ' || to_char(d.until, 'DD.MM.YYYY'),
-         case when m.role = 'tenant' then '#/kiraci/belgeler' else '#/ev-sahibi/ev/' || d.property_id || '/belge' end,
+         case when m.role = 'tenant' then '#/kiraci/belgeler' else '#/mulk-sahibi/mulk/' || d.property_id || '/belge' end,
          'evict-' || d.id
   from public.documents d
   join public.memberships m on m.property_id = d.property_id
@@ -815,3 +827,15 @@ grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 revoke execute on function public.daily_reminders(date) from public;
+
+-- ---------------------------------------------------------------------
+-- v4 veri güncellemesi: "Ev sahibi" değeri "Mülk sahibi" oldu.
+-- Tekrar çalıştırmak zararsızdır. Talep tetikleyicisi bu sırada kapatılır ki
+-- eski kayıtlar için "masraf önerildi" bildirimi gitmesin.
+-- ---------------------------------------------------------------------
+alter table public.requests disable trigger on_request_change;
+update public.requests set cost = 'Mülk sahibi' where cost = 'Ev sahibi';
+alter table public.requests enable trigger on_request_change;
+update public.properties set aidat_payer = 'Mülk sahibi' where aidat_payer = 'Ev sahibi';
+update public.properties set bills = replace(bills::text, '"Ev sahibi"', '"Mülk sahibi"')::jsonb
+  where bills::text like '%"Ev sahibi"%';

@@ -290,3 +290,8 @@ input.inline{width:100%;min-height:40px;margin-top:4px;border-radius:10px;border
 .bullets{margin:0;padding-left:18px;color:var(--muted);font-size:13.5px;line-height:1.7}
 details.card summary{cursor:pointer;list-style:none}
 details.card summary::-webkit-details-marker{display:none}
+
+/* v4: mülk tipleri */
+.hidden{display:none!important}
+.typeic{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--surface2);color:var(--accent)}
+button.chip{border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:800}

@@ -48,19 +48,23 @@ test.describe('İngilizce mod', () => {
   const ROUTES = [
     '#/kiraci', '#/kiraci/odemeler', '#/kiraci/talepler', '#/kiraci/mesajlar', '#/kiraci/belgeler',
     '#/kiraci/belgeler/tutanak', '#/kiraci/belgeler/cikis', '#/kiraci/takvim',
-    '#/ev-sahibi', '#/ev-sahibi/talepler', '#/ev-sahibi/mesajlar', '#/ev-sahibi/takvim', '#/ev-sahibi/rapor',
-    '#/ev-sahibi/ev/moda', '#/ev-sahibi/ev/moda/odeme', '#/ev-sahibi/ev/moda/talep', '#/ev-sahibi/ev/moda/mesaj',
-    '#/ev-sahibi/ev/moda/belge', '#/ev-sahibi/ev/moda/tutanak', '#/ev-sahibi/ev/moda/cikis', '#/ev-sahibi/ev/moda/gider',
-    '#/ev-sahibi/ev/cihangir/odeme', '#/ev-sahibi/ev/atasehir/odeme'
+    '#/mulk-sahibi', '#/mulk-sahibi/talepler', '#/mulk-sahibi/mesajlar', '#/mulk-sahibi/takvim', '#/mulk-sahibi/rapor',
+    '#/mulk-sahibi/mulk/moda', '#/mulk-sahibi/mulk/moda/odeme', '#/mulk-sahibi/mulk/moda/talep', '#/mulk-sahibi/mulk/moda/mesaj',
+    '#/mulk-sahibi/mulk/moda/belge', '#/mulk-sahibi/mulk/moda/tutanak', '#/mulk-sahibi/mulk/moda/cikis', '#/mulk-sahibi/mulk/moda/gider',
+    '#/mulk-sahibi/mulk/cihangir/odeme', '#/mulk-sahibi/mulk/atasehir/odeme',
+    '#/mulk-sahibi/mulk/levent', '#/mulk-sahibi/mulk/levent/odeme', '#/mulk-sahibi/mulk/levent/belge', '#/mulk-sahibi/mulk/levent/gider',
+    '#/mulk-sahibi/mulk/bagdat', '#/mulk-sahibi/mulk/bagdat/tutanak', '#/mulk-sahibi/mulk/bagdat/cikis'
   ];
   const SHEETS = [
     '#/kiraci/odemeler?s=odeme&pid=moda', '#/kiraci/talepler/r1', '#/kiraci/odemeler?s=dekont&pid=moda&key=2026-01',
-    '#/ev-sahibi?s=ayarlar', '#/ev-sahibi?s=bildirim', '#/ev-sahibi?s=arama', '#/ev-sahibi?s=harita', '#/ev-sahibi?s=ev-ekle',
-    '#/ev-sahibi/ev/moda?s=ev-duzenle', '#/ev-sahibi/ev/moda/odeme?s=yenileme', '#/ev-sahibi/ev/moda?s=kiraci-ekle',
-    '#/ev-sahibi/ev/moda/gider?s=gider&id=e1', '#/ev-sahibi/ev/moda/talep?s=talep&id=r1',
-    '#/ev-sahibi/ev/moda/talep?s=teklif&pid=moda&id=r1', '#/ev-sahibi/ev/moda/talep?s=fatura&pid=moda&id=r1',
-    '#/ev-sahibi/ev/moda/cikis?s=cikis-baslat&pid=moda', '#/ev-sahibi/ev/cihangir/odeme?s=red&pid=cihangir&key=2026-09',
-    '#/kiraci/talepler?s=yeni-talep&pid=moda', '#/kiraci/belgeler?s=belge&pid=moda'
+    '#/mulk-sahibi?s=ayarlar', '#/mulk-sahibi?s=bildirim', '#/mulk-sahibi?s=arama', '#/mulk-sahibi?s=harita', '#/mulk-sahibi?s=ev-ekle',
+    '#/mulk-sahibi/mulk/moda?s=ev-duzenle', '#/mulk-sahibi/mulk/moda/odeme?s=yenileme', '#/mulk-sahibi/mulk/moda?s=kiraci-ekle',
+    '#/mulk-sahibi/mulk/moda/gider?s=gider&id=e1', '#/mulk-sahibi/mulk/moda/talep?s=talep&id=r1',
+    '#/mulk-sahibi/mulk/moda/talep?s=teklif&pid=moda&id=r1', '#/mulk-sahibi/mulk/moda/talep?s=fatura&pid=moda&id=r1',
+    '#/mulk-sahibi/mulk/moda/cikis?s=cikis-baslat&pid=moda', '#/mulk-sahibi/mulk/cihangir/odeme?s=red&pid=cihangir&key=2026-09',
+    '#/kiraci/talepler?s=yeni-talep&pid=moda', '#/kiraci/belgeler?s=belge&pid=moda',
+    '#/mulk-sahibi/mulk/levent?s=ev-duzenle&pid=levent', '#/mulk-sahibi/mulk/bagdat/odeme?s=odeme&pid=bagdat',
+    '#/kiraci/talepler?s=yeni-talep&pid=levent', '#/mulk-sahibi/mulk/levent/belge?s=belge&pid=levent'
   ];
 
   test('tüm ekran ve alt sayfalarda çevrilmemiş metin kalmaz', async ({ page }) => {
@@ -69,13 +73,19 @@ test.describe('İngilizce mod', () => {
       await expect(page.locator('#screen h1')).toBeVisible();
     }
     // Tur, çıkış süreci ve dışa aktarmalar da metin üretir.
-    await page.goto('index.html#/ev-sahibi/ev/atasehir/cikis');
+    await page.goto('index.html#/mulk-sahibi/mulk/atasehir/cikis');
     await page.click('button:has-text("Start move-out")');
     await page.locator('#layer .sheet button:has-text("Start")').click();
     await page.click('button:has-text("Add unpaid rent")');
     await page.click('button:has-text("Export move-out report")');
     await page.keyboard.press('Escape');
-    await page.goto('index.html#/ev-sahibi/rapor');
+    for (const tp of ['Office', 'Shop', 'Warehouse']){
+      await page.goto('index.html#/mulk-sahibi?s=ev-ekle');
+      await page.locator('#layer .sheet button[data-act=newPropType]', { hasText:tp }).click();
+    }
+    await page.goto('index.html#/mulk-sahibi');
+    await page.locator('button[data-act=propFilter]', { hasText:'Office' }).click();
+    await page.goto('index.html#/mulk-sahibi/rapor');
     await page.click('button:has-text("Create tax return summary")');
     await page.keyboard.press('Escape');
     await page.click('.shell button:has-text("Start guided tour")');
@@ -86,7 +96,7 @@ test.describe('İngilizce mod', () => {
   });
 
   test('arayüz İngilizce, tarih ve sayılar yerel biçimde', async ({ page }) => {
-    await open(page, '#/ev-sahibi');
+    await open(page, '#/mulk-sahibi');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     await expect(page.locator('#screen h1')).toHaveText('My portfolio');
     await expect(page.locator('#tabbar')).toHaveText(/Portfolio.*Requests.*Messages.*Calendar.*Report/);
@@ -97,11 +107,11 @@ test.describe('İngilizce mod', () => {
   });
 
   test('kullanıcı verisi olmayan yerlerde Türkçe harf kalmaz', async ({ page }) => {
-    await open(page, '#/ev-sahibi?s=ayarlar');
+    await open(page, '#/mulk-sahibi?s=ayarlar');
     expect((await page.locator('#layer .sheet').innerText()).replace('Türkçe', '')).not.toMatch(TURKISH);
-    await open(page, '#/ev-sahibi');
+    await open(page, '#/mulk-sahibi');
     expect(await page.locator('#tabbar').innerText()).not.toMatch(TURKISH);
-    expect(await page.locator('#shell').innerText().then(s => s.replace(/Moda’daki ev|Cihangir 1\+1|Ataşehir 2\+1|English|Türkçe/g, ''))).not.toMatch(TURKISH);
+    expect(await page.locator('#shell').innerText().then(s => s.replace(/Moda’daki ev|Cihangir 1\+1|Ataşehir 2\+1|Levent ofis|Bağdat Cd. mağaza|English|Türkçe/g, ''))).not.toMatch(TURKISH);
   });
 
   test('dil ayarlardan değiştirilir ve kalıcıdır', async ({ page }) => {

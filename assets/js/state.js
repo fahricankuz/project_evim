@@ -9,8 +9,36 @@ export const KEY = 'evim';
 
 export const STEPS = ['Açıldı','Görüldü','İşlemde','Çözüldü'];
 export const CATS = ['Arıza','Tadilat','Ek talep'];
-export const DOC_CATS = ['Kira sözleşmesi','Tahliye taahhütnamesi','DASK poliçesi','Konut sigortası','Giriş–çıkış tutanağı','Fatura ve aidat','Diğer'];
-export const COST_OPTS = ['Belirlenmedi','Ev sahibi','Kiracı','Paylaşımlı'];
+export const DOC_CATS = ['Kira sözleşmesi','Tahliye taahhütnamesi','DASK poliçesi','Konut sigortası','İşyeri sigortası','Giriş–çıkış tutanağı','Fatura ve aidat','Stopaj makbuzu','İşyeri ruhsatı','Teminat mektubu','Diğer'];
+/** Yalnızca konutta / yalnızca işyerinde anlamlı belge kategorileri. */
+const DOC_KONUT = ['Konut sigortası'];
+const DOC_ISYERI = ['İşyeri sigortası','Stopaj makbuzu','İşyeri ruhsatı'];
+
+export const PROP_TYPES = ['Konut','Ofis','Mağaza','Depo'];
+export const DEPOSIT_KINDS = ['Nakit','Teminat mektubu'];
+export const TENANT_KINDS = ['Bireysel','Şirket / esnaf'];
+
+/** Tipe göre tutanak alanları (mülk eklenince önerilir). */
+export const AREA_TEMPLATES = {
+  'Konut':  ['Salon','Mutfak','Yatak odası','Banyo'],
+  'Ofis':   ['Açık ofis','Toplantı odası','Mutfak','WC'],
+  'Mağaza': ['Satış alanı','Vitrin','Depo','Cephe ve tabela','WC'],
+  'Depo':   ['Depolama alanı','Yükleme alanı','Elektrik tesisatı']
+};
+
+/** Tipe göre sık açılan talepler (yeni talep formunda öneri). */
+export const REQ_SUGGEST = {
+  'Konut':  ['Kombi arızası','Su kaçağı','Elektrik arızası','Klima montajı','Boya badana'],
+  'Ofis':   ['Klima arızası','Elektrik tesisatı','İnternet altyapısı','Aydınlatma','Asansör arızası'],
+  'Mağaza': ['Vitrin camı','Tabela','Kepenk arızası','Klima arızası','Elektrik tesisatı'],
+  'Depo':   ['Kepenk arızası','Çatı akıntısı','Elektrik tesisatı','Zemin onarımı']
+};
+
+export function isCommercial(p){ return !!p && p.type !== 'Konut'; }
+export function docCatsFor(p){
+  return DOC_CATS.filter(c => isCommercial(p) ? !DOC_KONUT.includes(c) : !DOC_ISYERI.includes(c) || p.docs.some(d => d.cat === c));
+}
+export const COST_OPTS = ['Belirlenmedi','Mülk sahibi','Kiracı','Paylaşımlı'];
 export const EXPENSE_CATS = ['Tamir ve bakım','Emlak vergisi','DASK ve sigorta','Aidat','Yönetim ve komisyon','Vergi ve harç','Diğer'];
 export const CONDITIONS = ['Aynı','Yıpranmış','Hasarlı','Eksik'];
 export const DEDUCTION_PRESETS = ['Temizlik','Boya','Onarım','Eksik eşya','Ödenmemiş fatura','Ödenmemiş aidat'];
@@ -24,34 +52,36 @@ export function seed(){
   return enrich(migrate(baseSeed()));
 }
 
+/**
+ * Sözleşme başından bugüne kadarki ayları onaylı ödeme olarak doldurur.
+ * `skipLast` kadar son ay boş bırakılır (gecikme ya da onay bekleyen ay kurgusu için).
+ */
+function fillPays(amount, startISO, skipLast = 0){
+  const t = t0(), o = {};
+  const start = parse(startISO);
+  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endKey = mkey(addM(new Date(t.getFullYear(), t.getMonth(), 1), -skipLast));
+  while (mkey(cur) <= endKey){
+    o[mkey(cur)] = {
+      status:'approved',
+      date: iso(new Date(cur.getFullYear(), cur.getMonth(), 3)),
+      amount,
+      receipt: 'dekont_'+mkey(cur)+'.pdf',
+      approvedAt: new Date(cur.getFullYear(), cur.getMonth(), 4).getTime()
+    };
+    cur = addM(cur, 1);
+  }
+  return o;
+}
+
 function baseSeed(){
   const t = t0(), now = Date.now();
 
   const START = { moda: iso(add(t,-313)), cihangir: iso(add(t,-195)), atasehir: iso(add(t,-337)) };
 
-  /**
-   * Sözleşme başından bugüne kadarki ayları onaylı ödeme olarak doldurur.
-   * `skipLast` kadar son ay boş bırakılır (gecikme ya da onay bekleyen ay kurgusu için).
-   */
-  const pays = (rent, startISO, skipLast = 0) => {
-    const o = {};
-    const start = parse(startISO);
-    let cur = new Date(start.getFullYear(), start.getMonth(), 1);
-    const endKey = mkey(addM(new Date(t.getFullYear(), t.getMonth(), 1), -skipLast));
-    while (mkey(cur) <= endKey){
-      o[mkey(cur)] = {
-        status:'approved',
-        date: iso(new Date(cur.getFullYear(), cur.getMonth(), 3)),
-        amount: rent,
-        receipt: 'dekont_'+mkey(cur)+'.pdf',
-        approvedAt: new Date(cur.getFullYear(), cur.getMonth(), 4).getTime()
-      };
-      cur = addM(cur, 1);
-    }
-    return o;
-  };
+  const pays = (rent, startISO, skipLast = 0) => fillPays(rent, startISO, skipLast);
 
-  const landlord = { name:'[Ev sahibi adı]', phone:'05000000000' };
+  const landlord = { name:'[Mülk sahibi adı]', phone:'05000000000' };
 
   const moda = {
     id:'moda', name:'Moda’daki ev', addr:'Moda Cd. No:[__] D:4, Kadıköy',
@@ -67,8 +97,8 @@ function baseSeed(){
         date: iso(add(t,-7)), photos:2, shots:[],
         log:[
           { at: now-7*DAY, text:'Talep açıldı' },
-          { at: now-6*DAY, text:'Ev sahibi görüntüledi' },
-          { at: now-5*DAY, text:'Masraf ev sahibinde olarak onaylandı' },
+          { at: now-6*DAY, text:'Mülk sahibi görüntüledi' },
+          { at: now-5*DAY, text:'Masraf mülk sahibinde olarak onaylandı' },
           { at: now-5*DAY+7200000, text:'Servis çağrıldı · İşlemde' }
         ] },
       { id:'r2', cat:'Ek talep', title:'Salona klima montajı',
@@ -80,7 +110,7 @@ function baseSeed(){
     msgs:[
       { from:'tenant', text:'Merhaba, kombi için talep açtım, fotoğraflar ekte.', at: now-6*DAY },
       { from:'landlord', text:'Gördüm, yarın servis arayacak.', at: now-6*DAY+3600000 },
-      { from:'system', text:'Talep durumu: İşlemde · Masraf ev sahibinde, onaylandı', at: now-5*DAY }
+      { from:'system', text:'Talep durumu: İşlemde · Masraf mülk sahibinde, onaylandı', at: now-5*DAY }
     ],
     docs:[
       { id:'d1', cat:'Kira sözleşmesi', name:'kira_sozlesmesi_imzali.pdf', at: iso(add(t,-313)) },
@@ -203,6 +233,61 @@ function enrich(d){
   ];
   r1.invoice = { amount:2400, name:'servis_faturasi.pdf', date: iso(add(t,-4)), expenseId:'e3' };
   r1.log.push({ at: now - 4*86400000, text:'Teklif seçildi: Yetkili servis · ₺2.400' });
+
+  // v4: işyerleri. Ofisin kiracısı bir şirket, kirayı stopajı keserek öder.
+  const landlord = moda.landlord;
+  const room = n => ({ n, photos:3, shots:[], note:'' });
+  const levent = {
+    id:'levent', type:'Ofis', name:'Levent ofis', addr:'Büyükdere Cd. No:[__] K:7, Şişli', area:140,
+    company:{ name:'[Şirket A.Ş.]', taxNo:'0000000000', taxOffice:'Zincirlikuyu' }, stopaj:true,
+    tenants:[{ id:'t1', name:'[Ofis yöneticisi]', phone:'05000000005', email:'' }], landlord,
+    rent:60000, dueDay:5, aidat:6500, aidatPayer:'Kiracı', deposit:180000, depositKind:'Nakit', depositNote:'Üç aylık kira, banka hesabında',
+    startDate: iso(add(t,-250)), contractEnd: iso(add(t,480)), dask:null,
+    rentHistory:[{ from: iso(add(t,-250)), amount:60000, note:'Sözleşme başlangıcı' }],
+    bills:[{n:'Elektrik',who:'Kiracı'},{n:'İnternet',who:'Kiracı'}],
+    pay: fillPays(48000, iso(add(t,-250)), 0),
+    requests:[
+      { id:'r4', cat:'Arıza', title:'Toplantı odası kliması soğutmuyor', desc:'Klima çalışıyor ama soğuk hava vermiyor.',
+        urgency:'Acil', status:1, cost:'Belirlenmedi', costOk:false, decision:null, date: iso(add(t,-1)), photos:1, shots:[],
+        log:[{ at: now-DAY, text:'Talep açıldı' }, { at: now-20*3600000, text:'Mülk sahibi görüntüledi' }], quotes:[], invoice:null }
+    ],
+    msgs:[ { from:'tenant', by:'t1', text:'Stopaj makbuzunu muhtasar beyannameden sonra yükleyeceğiz.', at: now-3*DAY } ],
+    docs:[
+      { id:'d8', cat:'Kira sözleşmesi', name:'ofis_sozlesme.pdf', at: iso(add(t,-250)) },
+      { id:'d9', cat:'İşyeri sigortası', name:'isyeri_sigorta.pdf', at: iso(add(t,-250)), until: iso(add(t,115)) },
+      { id:'d10', cat:'Stopaj makbuzu', name:'muhtasar_'+mkey(addM(t,-1))+'.pdf', at: iso(add(t,-9)) }
+    ],
+    inspect:{ tenantOk:true, landlordOk:true, rooms: AREA_TEMPLATES['Ofis'].map(room) },
+    renewal:null, expenses:[{ id:'e7', cat:'Emlak vergisi', amount:9800, date: y+'-05-20', note:'1. taksit' }],
+    value:14000000, moveOut:null
+  };
+  const bagdat = {
+    id:'bagdat', type:'Mağaza', name:'Bağdat Cd. mağaza', addr:'Bağdat Cd. No:[__], Kadıköy', area:85,
+    company:{ name:'[Esnaf kiracı]', taxNo:'0000000000', taxOffice:'Kozyatağı' }, stopaj:true,
+    tenants:[{ id:'t1', name:'[Mağaza sahibi]', phone:'05000000006', email:'' }], landlord,
+    rent:45000, dueDay:10, aidat:0, aidatPayer:'Kiracı', deposit:0, depositKind:'Teminat mektubu', depositNote:'Banka teminat mektubu · ₺135.000',
+    startDate: iso(add(t,-400)), contractEnd: iso(add(t,330)), dask:null,
+    rentHistory:[{ from: iso(add(t,-400)), amount:38000, note:'Sözleşme başlangıcı' }, { from: iso(add(t,-35)), amount:45000, note:'Sözleşme yenileme' }],
+    bills:[{n:'Elektrik',who:'Kiracı'},{n:'Su',who:'Kiracı'}],
+    pay: (() => {
+      const o = fillPays(30400, iso(add(t,-400)), 0);
+      // Yenilemeden sonraki aylar yeni tutarla.
+      Object.keys(o).forEach(k => { if (k + '-10' >= iso(add(t,-35))) o[k].amount = 36000; });
+      delete o[mkey(t)];
+      return o;
+    })(),
+    requests:[], msgs:[],
+    docs:[
+      { id:'d11', cat:'Kira sözleşmesi', name:'magaza_sozlesme.pdf', at: iso(add(t,-400)) },
+      { id:'d12', cat:'Teminat mektubu', name:'teminat_mektubu.pdf', at: iso(add(t,-400)), until: iso(add(t,340)) },
+      { id:'d13', cat:'İşyeri ruhsatı', name:'ruhsat.pdf', at: iso(add(t,-390)) }
+    ],
+    inspect:{ tenantOk:true, landlordOk:false, rooms: AREA_TEMPLATES['Mağaza'].map(room) },
+    renewal:null, expenses:[], value:11000000, moveOut:null
+  };
+  d.props.levent = levent;
+  d.props.bagdat = bagdat;
+  d.order.push('levent', 'bagdat');
 
   d.lang = 'tr';
   return d;

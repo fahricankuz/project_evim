@@ -8,7 +8,7 @@ test.afterEach(() => { expect(errors).toEqual([]); });
 test('rol değişimi ve tarayıcı geri tuşu', async ({ page }) => {
   await open(page, '#/kiraci');
   await page.click('.rolepill');
-  await expect(page).toHaveURL(/#\/ev-sahibi$/);
+  await expect(page).toHaveURL(/#\/mulk-sahibi$/);
   await expect(page.locator('#screen h1')).toHaveText('Portföyüm');
   await page.goBack();
   await expect(page.locator('#screen h1')).toHaveText('Moda’daki ev');
@@ -45,7 +45,7 @@ test('kiracı talep açar ve detayına link ile gider', async ({ page }) => {
 });
 
 test('ev sahibi talebi ilerletir', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/moda/talep');
+  await open(page, '#/mulk-sahibi/mulk/moda/talep');
   await page.click('.card:has-text("Kombi")');
   await sheet(page).locator('button:has-text("Durumu ilerlet")').click();
   // Çözülen talep "Tamamlanan" sekmesine geçer.
@@ -54,14 +54,14 @@ test('ev sahibi talebi ilerletir', async ({ page }) => {
 });
 
 test('ev sahibi dekontu onaylar ve ekranda kalır', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/cihangir/odeme');
+  await open(page, '#/mulk-sahibi/mulk/cihangir/odeme');
   await page.click('.hero button:has-text("Onayla")');
   await expect(page).toHaveURL(/cihangir\/odeme$/);
   await expect(page.locator('#screen .hero')).not.toContainText('Onay bekliyor');
 });
 
 test('arama sonuç bulur ve sonuca gider', async ({ page }) => {
-  await open(page, '#/ev-sahibi');
+  await open(page, '#/mulk-sahibi');
   await page.click('[aria-label="Ara"]');
   await page.fill('#searchIn', 'kombi');
   await expect(sheet(page)).toContainText('Kombi');
@@ -88,7 +88,7 @@ test('tema seçimi yenilemede korunur', async ({ page }) => {
 });
 
 test('yenileme teklifi iki tarafta da görünür', async ({ page }) => {
-  await open(page, '#/ev-sahibi/ev/moda/odeme?s=yenileme');
+  await open(page, '#/mulk-sahibi/mulk/moda/odeme?s=yenileme');
   await page.fill('[data-input=cpi]', '50');
   await expect(page.locator('#maxOut')).toContainText('48.750');
   await page.click('button:has-text("Teklifi kiracıya gönder")');

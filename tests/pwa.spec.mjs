@@ -38,7 +38,7 @@ test('uygulama çevrimdışıyken de açılır', async ({ page, context, browser
   await expect(page.locator('#screen h1')).toHaveText('Moda’daki ev');
 
   await context.setOffline(true);
-  await page.goto('index.html#/ev-sahibi/rapor');
+  await page.goto('index.html#/mulk-sahibi/rapor');
   await expect(page.locator('#screen h1')).toHaveText('Rapor');
   await context.setOffline(false);
 });

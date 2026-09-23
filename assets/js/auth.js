@@ -24,7 +24,7 @@ const INVITE_KEY = 'evim-davet';
 /** Oturum sahibinin ana ekranı. */
 export function home(){
   const role = backend.live.profile?.role;
-  if (role === 'landlord') return '/ev-sahibi';
+  if (role === 'landlord') return '/mulk-sahibi';
   return S.myHome ? '/kiraci' : '/davet';
 }
 
@@ -44,7 +44,7 @@ export function guard(route){
     if (route.auth === 'davet' && profile.role !== 'tenant') return home();
     return null;
   }
-  if (profile.role === 'landlord' && route.role !== 'landlord') return '/ev-sahibi';
+  if (profile.role === 'landlord' && route.role !== 'landlord') return '/mulk-sahibi';
   if (profile.role === 'tenant'){
     if (!S.myHome) return '/davet';
     if (route.role !== 'tenant') return '/kiraci';
@@ -74,7 +74,7 @@ async function acceptPendingInvite(){
   if (!code || backend.live.profile?.role !== 'tenant') return;
   try {
     await backend.acceptInvite(code);
-    notify({ title:t('Eve katıldın'), body:t('Ev sahibinle artık aynı paneldesiniz.'), icon:'home' }, false);
+    notify({ title:t('Mülke katıldın'), body:t('Mülk sahibinle artık aynı paneldesiniz.'), icon:'home' }, false);
   } catch(e){
     notify({ title:t('Davet kabul edilemedi'), body: backend.humanError(e), icon:'home' }, false);
   }
@@ -149,7 +149,7 @@ function loginScreen(){
   const code = pendingCode();
   return '<div class="auth">' + brand(t('Kira takibi, iki taraf için tek yerde')) +
     ('<h1>'+t('Giriş yap')+'</h1>') +
-    (code ? ('<div class="note">'+t('Davet kodun kaydedildi:')+' <b>')+esc(code)+('</b>'+t('. Giriş yapınca eve bağlanacaksın.')+'</div>') : '') +
+    (code ? ('<div class="note">'+t('Davet kodun kaydedildi:')+' <b>')+esc(code)+('</b>'+t('. Giriş yapınca mülke bağlanacaksın.')+'</div>') : '') +
     message() +
     '<form class="stack" data-form="login" novalidate>' +
       ('<label class="field">'+t('E-posta')+'<input name="email" type="email" required autocomplete="email" inputmode="email"></label>') +
@@ -170,12 +170,12 @@ function signupScreen(){
       '<b>'+title+'</b><span class="muted">'+sub+'</span></label>';
   return '<div class="auth">' + brand(t('Hesap oluştur')) +
     ('<h1>'+t('Kayıt ol')+'</h1>') +
-    (code ? ('<div class="note">'+t('Davet kodu')+' <b>')+esc(code)+('</b> '+t('ile kiracı hesabı açıyorsun. Kayıttan sonra eve otomatik bağlanacaksın.')+'</div>') : '') +
+    (code ? ('<div class="note">'+t('Davet kodu')+' <b>')+esc(code)+('</b> '+t('ile kiracı hesabı açıyorsun. Kayıttan sonra mülke otomatik bağlanacaksın.')+'</div>') : '') +
     message() +
     '<form class="stack" data-form="signup" novalidate>' +
       ('<fieldset class="roles"><legend class="label">'+t('Hesap türü')+'</legend>') +
         card('tenant', t('Kiracıyım'), t('Kiramı öder, taleplerimi takip ederim')) +
-        card('landlord', t('Ev sahibiyim'), t('Evlerimi ve kiracılarımı yönetirim')) +
+        card('landlord', t('Mülk sahibiyim'), t('Mülklerimi ve kiracılarımı yönetirim')) +
       '</fieldset>' +
       ('<label class="field">'+t('Ad soyad')+'<input name="name" required autocomplete="name" maxlength="60"></label>') +
       ('<label class="field">'+t('E-posta')+'<input name="email" type="email" required autocomplete="email" inputmode="email"></label>') +
@@ -213,8 +213,8 @@ function newPasswordScreen(){
 function joinScreen(route){
   const code = (route.code || '').toUpperCase();
   return '<div class="auth">' + brand(t('Davet')) +
-    ('<h1>'+t('Evine davet edildin')+'</h1>') +
-    ('<p class="muted">'+t('Ev sahibin seni Evim’e davet etti. Hesabını oluştur ya da giriş yap; evine otomatik bağlanacaksın.')+'</p>') +
+    ('<h1>'+t('Kiraladığın mülke davet edildin')+'</h1>') +
+    ('<p class="muted">'+t('Mülk sahibin seni Evim’e davet etti. Hesabını oluştur ya da giriş yap; kiraladığın mülke otomatik bağlanacaksın.')+'</p>') +
     '<div class="codebox">'+esc(code)+'</div>' + message() +
     ('<button class="btn primary block" data-act="nav" data-go="/kayit">'+t('Kiracı hesabı oluştur')+'</button>') +
     ('<button class="btn ghost block" data-act="nav" data-go="/giris">'+t('Hesabım var, giriş yap')+'</button></div>');
@@ -223,12 +223,12 @@ function joinScreen(route){
 function inviteCodeScreen(){
   const name = backend.live.profile?.name || '';
   return '<div class="auth">' + brand(name ? (t('Merhaba')+' ') + name : t('Hoş geldin')) +
-    ('<h1>'+t('Evine bağlan')+'</h1>') +
-    ('<p class="muted">'+t('Ev sahibinden aldığın davet kodunu gir. Kodu ev sahibin Evim’de “Kiracı ekle” ile oluşturur.')+'</p>') +
+    ('<h1>'+t('Mülkine bağlan')+'</h1>') +
+    ('<p class="muted">'+t('Mülk sahibinden aldığın davet kodunu gir. Kodu mülk sahibin Evim’de “Kiracı ekle” ile oluşturur.')+'</p>') +
     message() +
     '<form class="stack" data-form="join" novalidate>' +
       ('<label class="field">'+t('Davet kodu')+'<input name="code" required autocomplete="one-time-code" autocapitalize="characters" maxlength="12" style="text-transform:uppercase;letter-spacing:.12em;font-weight:800"></label>') +
-      ('<button class="btn primary block">'+t('Eve bağlan')+'</button>') +
+      ('<button class="btn primary block">'+t('Mülke bağlan')+'</button>') +
     '</form>' +
     ('<button class="linkbtn" data-act="signOut">'+t('Çıkış yap')+'</button></div>');
 }
@@ -333,7 +333,7 @@ export async function authSubmit(type, fd, form){
     try {
       await backend.acceptInvite(code);
       ui.meTenant = backend.live.user?.id;
-      notify({ title:t('Eve katıldın'), body:t('Ev sahibinle artık aynı paneldesiniz.'), icon:'home' }, false);
+      notify({ title:t('Mülke katıldın'), body:t('Mülk sahibinle artık aynı paneldesiniz.'), icon:'home' }, false);
       go(home(), { replace:true });
     } catch(e){ fail(backend.humanError(e), form); }
     return;
@@ -362,7 +362,7 @@ export const AUTH_ACTIONS = {
     const { ask } = await import('./confirm.js');
     if (!await ask({
       title:t('Hesabın silinsin mi?'),
-      body:t('Hesabın ve sahibi olduğun evlerin tüm kayıtları kalıcı olarak silinir. Bu işlem geri alınamaz.'),
+      body:t('Hesabın ve sahibi olduğun mülklerin tüm kayıtları kalıcı olarak silinir. Bu işlem geri alınamaz.'),
       ok:t('Hesabı sil'), danger:true
     })) return;
     try {

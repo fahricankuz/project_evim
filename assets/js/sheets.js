@@ -2,10 +2,11 @@
    ?s=<ad> — böylece geri tuşu sheet'i kapatır, link paylaşımı sheet'i açar. */
 
 import { t } from './i18n.js';
-import { S, ui, CATS, DOC_CATS, COST_OPTS, STEPS, EXPENSE_CATS, DEDUCTION_PRESETS } from './state.js';
+import { S, ui, CATS, COST_OPTS, STEPS, EXPENSE_CATS, DEDUCTION_PRESETS, PROP_TYPES, DEPOSIT_KINDS, TENANT_KINDS, REQ_SUGGEST, isCommercial, docCatsFor } from './state.js';
 import { I, ic } from './icons.js';
 import { current } from './router.js';
-import { P, period, statusOf, remaining, ST, reminders, otherPerson, rentAt, moveOutSummary } from './logic.js';
+import { P, period, statusOf, remaining, ST, reminders, otherPerson, rentAt, expectedAt, moveOutSummary } from './logic.js';
+import { stopajLine } from './views.js';
 import { searchBody, isCurrent, installBlock, langSwitch } from './views.js';
 import { esc, opts, tl, fmt, fmtFull, monthYear, parse, iso, t0, daysTo, tm, ago } from './util.js';
 import { screenMap } from './router.js';
@@ -57,7 +58,7 @@ function mapSheet(route){
     (LIVE ? '' :
     ('<div class="seg" role="group" aria-label="'+t('Rol')+'" style="margin-bottom:12px">') +
       '<button data-act="nav" data-go="/kiraci" aria-pressed="'+(route.role === 'tenant')+('">'+t('Kiracı')+'</button>') +
-      '<button data-act="nav" data-go="/ev-sahibi" aria-pressed="'+(route.role === 'landlord')+('">'+t('Ev sahibi')+'</button></div>')) +
+      '<button data-act="nav" data-go="/mulk-sahibi" aria-pressed="'+(route.role === 'landlord')+('">'+t('Mülk sahibi')+'</button></div>')) +
     '<div class="maplist">' + items.map(it =>
       '<button class="'+(it.depth ? 'depth' : '')+'" data-act="nav" data-go="'+esc(it.path)+'"' +
       (isCurrent(route, it) ? ' aria-current="true"' : '')+'>'+(it.depth ? '' : ic(it.icon, 17))+esc(it.label)+'</button>').join('') +
@@ -92,7 +93,7 @@ function settingsSheet(){
     : [['receipt',t('Dekont geldi')],['late',t('Kira gecikti')],['newReq',t('Yeni talep')],['dask',t('DASK bitiyor')]];
 
   return ('<h3>'+t('Ayarlar')+'</h3>') +
-    ('<div class="muted" style="margin-bottom:6px">'+t('Hatırlatma eşikleri')+' ')+(ui.role === 'tenant' ? t('kiracı') : t('ev sahibi'))+(' '+t('görünümüne uygulanır.')+'</div>') +
+    ('<div class="muted" style="margin-bottom:6px">'+t('Hatırlatma eşikleri')+' ')+(ui.role === 'tenant' ? t('kiracı') : t('mülk sahibi'))+(' '+t('görünümüne uygulanır.')+'</div>') +
     ('<label class="toggle">'+t('Kira günü hatırlatması (gün önce)')+'<input type="number" min="0" max="15" value="')+s.rentDays+'" data-input="set" data-k="rentDays"></label>' +
     ('<label class="toggle">'+t('Sözleşme yenileme (gün önce)')+'<input type="number" min="7" max="120" value="')+s.renewDays+'" data-input="set" data-k="renewDays"></label>' +
     (ui.role === 'landlord' ? ('<label class="toggle">'+t('DASK ve sigorta (gün önce)')+'<input type="number" min="7" max="90" value="')+s.insDays+'" data-input="set" data-k="insDays"></label>' : '') +
@@ -120,13 +121,16 @@ function settingsSheet(){
         ('<label class="btn small ghost" style="cursor:pointer">'+t('Veri içe aktar')+'<input type="file" accept="application/json" class="sr" data-input="importData"></label>') +
         ('<button class="btn small danger" data-act="reset">'+t('Demo verisini sıfırla')+'</button>')) +
     '</div>' +
-    '<p class="foot">'+(LIVE ? t('Verilerin sunucuda, yalnızca evin üyelerinin erişebileceği şekilde saklanır.') : t('Veriler yalnızca bu tarayıcıda saklanır.'))+'</p>';
+    '<p class="foot">'+(LIVE ? t('Verilerin sunucuda, yalnızca mülkün üyelerinin erişebileceği şekilde saklanır.') : t('Veriler yalnızca bu tarayıcıda saklanır.'))+'</p>';
 }
 
 function newReqSheet(p){
   return ('<h3>'+t('Yeni talep')+'</h3><form class="stack" data-form="newReq" data-pid="')+p.id+'">' +
     ('<label class="field">'+t('Tür')+'<select name="cat">')+opts(CATS, 'Arıza')+'</select></label>' +
-    ('<label class="field">'+t('Başlık')+'<input name="title" required maxlength="80" placeholder="'+t('Ör. Mutfak musluğu damlatıyor')+'"></label>') +
+    ('<label class="field">'+t('Başlık')+'<input name="title" required maxlength="80" list="reqSuggest" placeholder="'+t('Ör. Mutfak musluğu damlatıyor')+'"></label>') +
+    '<datalist id="reqSuggest">'+(REQ_SUGGEST[p.type] || REQ_SUGGEST['Konut']).map(x => '<option value="'+esc(t(x))+'">').join('')+'</datalist>' +
+    '<div class="row" style="flex-wrap:wrap;gap:6px">'+(REQ_SUGGEST[p.type] || REQ_SUGGEST['Konut']).map(x =>
+      '<button type="button" class="chip" data-act="suggestTitle" data-v="'+esc(t(x))+'">'+esc(t(x))+'</button>').join('')+'</div>' +
     ('<label class="field">'+t('Açıklama')+'<textarea name="desc" maxlength="600" placeholder="'+t('Ne zamandır sürüyor, nerede, nasıl?')+'"></textarea></label>') +
     ('<label class="field">'+t('Aciliyet')+'<select name="urgency">')+opts(['Normal','Acil'], 'Normal')+'</select></label>' +
     ('<label class="field">'+t('Fotoğraf')+'<input type="file" name="files" accept="image/*" multiple style="padding-top:10px"></label>') +
@@ -155,7 +159,7 @@ function reqSheet(p, id){
     ctrl += ('<label class="field">'+t('Masrafı kim karşılıyor?')+'<select data-input="cost" data-pid="')+p.id+'" data-id="'+r.id+'">'+opts(COST_OPTS, r.cost)+'</select></label>';
   } else {
     if (r.cost !== 'Belirlenmedi' && !r.costOk && r.cat !== 'Ek talep')
-      ctrl += ('<div class="note">'+t('Ev sahibi masrafın')+' <b>')+esc(t(r.cost))+('</b> '+t('tarafından karşılanmasını önerdi.')+'</div>') +
+      ctrl += ('<div class="note">'+t('Mülk sahibi masrafın')+' <b>')+esc(t(r.cost))+('</b> '+t('tarafından karşılanmasını önerdi.')+'</div>') +
         '<button class="btn primary block" data-act="okCost" data-pid="'+p.id+'" data-id="'+r.id+('">'+t('Masraf paylaşımını onayla')+'</button>');
     if (r.status < 3)
       ctrl += '<button class="btn ghost block" data-act="closeReq" data-pid="'+p.id+'" data-id="'+r.id+('">'+t('Talebi kapat (çözüldü)')+'</button>');
@@ -176,7 +180,7 @@ function reqSheet(p, id){
       ? '<div><div class="steps">'+steps+'</div><div class="steplbl">'+STEPS.map((s,i) => '<span class="'+(i === r.status ? 'on' : '')+'">'+t(s)+'</span>').join('')+'</div></div>'
       : (r.decision
           ? '<span class="chip '+(r.decision === 'Onaylandı' ? 'ok' : 'bad')+'">'+esc(t(r.decision))+'</span>'
-          : ('<span class="chip wait">'+t('Ev sahibinin kararı bekleniyor')+'</span>'))) +
+          : ('<span class="chip wait">'+t('Mülk sahibinin kararı bekleniyor')+'</span>'))) +
     ('<div class="kv"><span>'+t('Masraf')+'</span><span>')+esc(t(r.cost))+(r.costOk ? (' '+t('· onaylı')) : r.cost !== 'Belirlenmedi' ? (' '+t('· onay bekliyor')) : '')+'</span></div>' +
     ctrl +
     quotesSection(p, r) +
@@ -186,7 +190,7 @@ function reqSheet(p, id){
 
 function uploadSheet(p, cat){
   return ('<h3>'+t('Belge yükle')+'</h3><form class="stack" data-form="upload" data-pid="')+p.id+'">' +
-    ('<label class="field">'+t('Kategori')+'<select name="cat">')+opts(DOC_CATS, cat || DOC_CATS[0])+'</select></label>' +
+    ('<label class="field">'+t('Kategori')+'<select name="cat">')+opts(docCatsFor(p), cat || 'Kira sözleşmesi')+'</select></label>' +
     ('<label class="field">'+t('Dosya')+'<input type="file" name="file" accept="application/pdf,image/*" required style="padding-top:10px"></label>') +
     ('<label class="field">'+t('Bitiş veya tahliye tarihi (varsa)')+'<input type="date" name="until"></label>') +
     ('<div class="muted">'+t('Tarih girersen, yaklaştığında iki tarafa da hatırlatma gider. Tahliye taahhütnamesi ve sigorta poliçeleri için önerilir.')+'</div>') +
@@ -199,8 +203,9 @@ function receiptSheet(p, key){
   const st = statusOf(p, key);
   return '<h3>'+monthYear(key)+' dekontu</h3><div class="stack">' +
     receiptPreview(rc) +
-    ('<div class="kv"><span>'+t('Tutar')+'</span><span>')+tl(rc.amount != null ? rc.amount : rentAt(p, key))+'</span></div>' +
-    ('<div class="kv"><span>'+t('Beklenen')+'</span><span>')+tl(rentAt(p, key))+'</span></div>' +
+    ('<div class="kv"><span>'+t('Tutar')+'</span><span>')+tl(rc.amount != null ? rc.amount : expectedAt(p, key))+'</span></div>' +
+    ('<div class="kv"><span>'+t('Beklenen')+'</span><span>')+tl(expectedAt(p, key))+'</span></div>' +
+    (p.stopaj ? '<div class="muted">'+esc(stopajLine(p, key))+'</div>' : '') +
     ('<div class="kv"><span>'+t('Ödeme tarihi')+'</span><span>')+(rc.date ? fmtFull(parse(rc.date)) : '—')+'</span></div>' +
     ('<div class="kv"><span>'+t('Durum')+'</span><span>')+esc((ST[st] || ST.pending)[0])+'</span></div>' +
     (rc.note ? ('<div class="kv"><span>'+t('Not')+'</span><span>')+esc(rc.note)+'</span></div>' : '') +
@@ -219,10 +224,11 @@ function payFormSheet(p, key){
   const k = key || period(p).key;
   const rec = p.pay[k] || {};
   const paid = rec.status === 'partial' ? Number(rec.amount) || 0 : 0;
-  const due = rentAt(p, k);
+  const due = expectedAt(p, k);
   const suggest = Math.max(0, due - paid);
   return '<h3>'+monthYear(k)+(' '+t('ödemesi')+'</h3><form class="stack" data-form="pay" data-pid="')+p.id+'" data-key="'+k+'">' +
-    ('<div class="kv"><span>'+t('Bu ayın kirası')+'</span><span>')+tl(due)+'</span></div>' +
+    ('<div class="kv"><span>'+(p.stopaj ? t('Hesaba yatacak tutar') : t('Bu ayın kirası'))+'</span><span>')+tl(due)+'</span></div>' +
+    (p.stopaj ? '<div class="muted">'+esc(stopajLine(p, k))+'</div>' : '') +
     (paid ? ('<div class="kv"><span>'+t('Şimdiye kadar ödenen')+'</span><span>')+tl(paid)+'</span></div>' : '') +
     ('<label class="field">'+t('Ödenen tutar (₺)')+'<input name="amount" type="number" min="0" step="1" required value="')+suggest+'" inputmode="numeric"></label>' +
     ('<label class="field">'+t('Ödeme tarihi')+'<input name="date" type="date" required value="')+iso(t0())+'" max="'+iso(t0())+'"></label>' +
@@ -259,35 +265,60 @@ function renewalSheet(p){
     ('<div class="muted">'+t('Oranı TÜİK’in resmi açıklamasından kontrol et. Taraflar daha düşük bir artışta anlaşabilir.')+'</div></div>');
 }
 
+/** Kiracı türü ve şirket bilgileri — ekleme ve düzenleme formlarında ortak. */
+function lesseeFields(p){
+  const company = p && p.company;
+  const kind = company ? TENANT_KINDS[1] : TENANT_KINDS[0];
+  return ('<label class="field">'+t('Kiracı türü')+'<select name="tenantKind" data-input="tenantKind">')+opts(TENANT_KINDS, kind)+'</select></label>' +
+    '<div class="stack'+(company ? '' : ' hidden')+'" data-company style="gap:12px">' +
+      ('<label class="field">'+t('Unvan')+'<input name="coName" maxlength="120" value="')+esc(company?.name || '')+('" placeholder="'+t('Ör. Örnek Ticaret Ltd. Şti.')+'"></label>') +
+      ('<div class="grid2"><label class="field">'+t('Vergi no')+'<input name="coTaxNo" maxlength="11" inputmode="numeric" value="')+esc(company?.taxNo || '')+'"></label>' +
+      ('<label class="field">'+t('Vergi dairesi')+'<input name="coTaxOffice" maxlength="60" value="')+esc(company?.taxOffice || '')+'"></label></div>' +
+      ('<label class="toggle" style="border-top:0;padding:4px 0">'+t('Kiracı kira stopajı keser (%20)')+'<input type="checkbox" name="stopaj"')+(!p || p.stopaj || !company ? ' checked' : '')+'></label>' +
+      ('<div class="muted">'+t('Şirket ya da esnaf kiracı, kiranın %20’sini keserek vergi dairesine öder; sana net tutar yatar. Kira alanına sözleşmedeki brüt tutarı yaz.')+'</div>') +
+    '</div>';
+}
+
 function addPropSheet(){
-  return ('<h3>'+t('Ev ekle')+'</h3><form class="stack" data-form="addProp">') +
-    ('<label class="field">'+t('Ev adı')+'<input name="name" required maxlength="60" placeholder="'+t('Ör. Kadıköy 3+1')+'"></label>') +
+  const type = ui.newPropType || 'Konut';
+  return ('<h3>'+t('Mülk ekle')+'</h3><form class="stack" data-form="addProp">') +
+    ('<div class="seg" role="group" aria-label="'+t('Mülk tipi')+'">') +
+      PROP_TYPES.map(tp => '<button type="button" data-act="newPropType" data-v="'+esc(tp)+'" aria-pressed="'+(tp === type)+'">'+esc(t(tp))+'</button>').join('') + '</div>' +
+    '<input type="hidden" name="type" value="'+esc(type)+'">' +
+    ('<label class="field">'+t('Mülk adı')+'<input name="name" required maxlength="60" placeholder="'+(type === 'Konut' ? t('Ör. Kadıköy 3+1') : type === 'Ofis' ? t('Ör. Levent ofis') : type === 'Mağaza' ? t('Ör. Bağdat Cd. mağaza') : t('Ör. Hadımköy depo'))+'"></label>') +
     ('<label class="field">'+t('Adres')+'<input name="addr" required maxlength="120"></label>') +
     ('<div class="grid2"><label class="field">'+t('Aylık kira (₺)')+'<input name="rent" type="number" min="0" required inputmode="numeric"></label>') +
     ('<label class="field">'+t('Ödeme günü')+'<input name="due" type="number" min="1" max="28" value="1" inputmode="numeric"></label></div>') +
+    (type !== 'Konut' ? lesseeFields(null) : '') +
     ('<label class="field">'+t('Kiracının telefonu')+'<input name="phone" type="tel" placeholder="05__ ___ __ __"></label>') +
-    ('<div class="muted">'+t('Kaydettiğinde kiracıya WhatsApp ile davet linki hazırlanır; katıldığında ev iki taraflı panele dönüşür.')+'</div>') +
+    ('<div class="muted">'+t('Kaydettiğinde kiracıya WhatsApp ile davet linki hazırlanır; katıldığında mülk iki taraflı panele dönüşür.')+'</div>') +
     ('<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">'+t('Vazgeç')+'</button>') +
     ('<button class="btn primary" style="flex:1">'+t('Kaydet ve davet et')+'</button></div></form>');
 }
 
 function editPropSheet(p){
-  return ('<h3>'+t('Ev bilgileri')+'</h3><form class="stack" data-form="editProp" data-pid="')+p.id+'">' +
-    ('<label class="field">'+t('Ev adı')+'<input name="name" required maxlength="60" value="')+esc(p.name)+'"></label>' +
+  return ('<h3>'+t('Mülk bilgileri')+'</h3><form class="stack" data-form="editProp" data-pid="')+p.id+'">' +
+    ('<label class="field">'+t('Mülk adı')+'<input name="name" required maxlength="60" value="')+esc(p.name)+'"></label>' +
     ('<label class="field">'+t('Adres')+'<input name="addr" required maxlength="120" value="')+esc(p.addr)+'"></label>' +
-    ('<div class="grid2"><label class="field">'+t('Aylık kira (₺)')+'<input name="rent" type="number" min="0" required value="')+p.rent+'"></label>' +
+    ('<div class="grid2"><label class="field">'+t('Mülk tipi')+'<select name="type">')+opts(PROP_TYPES, p.type)+'</select></label>' +
+    ('<label class="field">'+t('Alan (m²)')+'<input name="area" type="number" min="0" value="')+(p.area || '')+('" placeholder="'+t('İsteğe bağlı')+'"></label></div>') +
+    ('<div class="grid2"><label class="field">'+(p.stopaj ? t('Aylık brüt kira (₺)') : t('Aylık kira (₺)'))+'<input name="rent" type="number" min="0" required value="')+p.rent+'"></label>' +
     ('<label class="field">'+t('Ödeme günü')+'<input name="due" type="number" min="1" max="28" value="')+p.dueDay+'"></label></div>' +
+    lesseeFields(p) +
     ('<div class="grid2"><label class="field">'+t('Aidat (₺)')+'<input name="aidat" type="number" min="0" value="')+p.aidat+'"></label>' +
-    ('<label class="field">'+t('Aidatı ödeyen')+'<select name="aidatPayer">')+opts(['Kiracı','Ev sahibi'], p.aidatPayer)+'</select></label></div>' +
-    ('<div class="grid2"><label class="field">'+t('Depozito (₺)')+'<input name="deposit" type="number" min="0" value="')+p.deposit+'"></label>' +
-    ('<label class="field">'+t('Tahmini değer (₺)')+'<input name="value" type="number" min="0" value="')+(p.value || '')+('" placeholder="'+t('İsteğe bağlı')+'"></label></div>') +
+    ('<label class="field">'+t('Aidatı ödeyen')+'<select name="aidatPayer">')+opts(['Kiracı','Mülk sahibi'], p.aidatPayer)+'</select></label></div>' +
+    ('<div class="grid2"><label class="field">'+t('Depozito türü')+'<select name="depositKind">')+opts(DEPOSIT_KINDS, p.depositKind || 'Nakit')+'</select></label>' +
+    ('<label class="field">'+t('Depozito (₺)')+'<input name="deposit" type="number" min="0" value="')+p.deposit+'"></label></div>' +
+    ('<label class="field">'+t('Depozito notu')+'<input name="depositNote" maxlength="120" value="')+esc(p.depositNote || '')+('" placeholder="'+t('Ör. banka, mektup tutarı ve vadesi')+'"></label>') +
+    ('<label class="field">'+t('Tahmini değer (₺)')+'<input name="value" type="number" min="0" value="')+(p.value || '')+('" placeholder="'+t('İsteğe bağlı')+'"></label>') +
     ('<div class="muted">'+t('Kira tutarını değiştirirsen bugünden geçerli yeni bir dönem olarak kira geçmişine eklenir. Değer, net getiri oranı için kullanılır.')+'</div>') +
     ('<div class="grid2"><label class="field">'+t('Sözleşme bitişi')+'<input name="contractEnd" type="date" value="')+esc(p.contractEnd)+'"></label>' +
-    ('<label class="field">'+t('DASK bitişi')+'<input name="dask" type="date" value="')+esc(p.dask)+'"></label></div>' +
+    ('<label class="field">'+(isCommercial(p) ? t('DASK bitişi (varsa)') : t('DASK bitişi'))+'<input name="dask" type="date" value="')+esc(p.dask || '')+'"></label></div>' +
+    (isCommercial(p) ? ('<div class="muted">'+t('DASK yalnızca konutta zorunludur. İşyeri sigortasını Belgeler’e bitiş tarihiyle yüklersen hatırlatma kurulur.')+'</div>') : '') +
 
     ('<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">'+t('Vazgeç')+'</button>') +
     ('<button class="btn primary" style="flex:1">'+t('Kaydet')+'</button></div>') +
-    (S.order.length > 1 ? '<button type="button" class="btn small danger block" data-act="removeProp" data-pid="'+p.id+('">'+t('Bu evi kaldır')+'</button>') : '') +
+    (S.order.length > 1 ? '<button type="button" class="btn small danger block" data-act="removeProp" data-pid="'+p.id+('">'+t('Bu mülkü kaldır')+'</button>') : '') +
     '</form>';
 }
 
@@ -345,7 +376,7 @@ function invoiceSheet(p, reqId){
   const r = p.requests.find(x => x.id === reqId);
   if (!r) return null;
   const q = (r.quotes || []).find(x => x.chosen);
-  const landlordPays = r.cost === 'Ev sahibi' || r.cost === 'Paylaşımlı';
+  const landlordPays = r.cost === 'Mülk sahibi' || r.cost === 'Paylaşımlı';
   return ('<h3>'+t('Fatura ekle')+'</h3><form class="stack" data-form="invoice" data-pid="')+p.id+'" data-id="'+r.id+'">' +
     '<div class="muted">'+esc(r.title)+(q ? ' · '+esc(q.vendor) : '')+'</div>' +
     ('<div class="grid2"><label class="field">'+t('Tutar (₺)')+'<input name="amount" type="number" min="0" required value="')+(q ? q.amount : '')+'"></label>' +
@@ -362,7 +393,7 @@ function invoiceSheet(p, reqId){
 
 function addTenantSheet(p){
   return ('<h3>'+t('Kiracı ekle')+'</h3><form class="stack" data-form="addTenant" data-pid="')+p.id+'">' +
-    '<div class="muted">'+esc(p.name)+(' '+t('için yeni bir kiracı hesabı. Ev arkadaşları aynı evin ödemelerini, taleplerini ve yazışmalarını birlikte görür.')+'</div>') +
+    '<div class="muted">'+esc(p.name)+(' '+t('için yeni bir kiracı hesabı. Aynı mülkün kiracıları ödemeleri, talepleri ve yazışmaları birlikte görür.')+'</div>') +
     ('<label class="field">'+t('Ad soyad')+'<input name="name" required maxlength="60"></label>') +
     ('<label class="field">'+t('E-posta')+'<input name="email" type="email" placeholder="'+t('Davet bu adrese gider')+'"></label>') +
     ('<label class="field">'+t('Telefon')+'<input name="phone" type="tel" placeholder="05__ ___ __ __"></label>') +
@@ -389,7 +420,7 @@ function expenseSheet(p, id){
 
 function startMoveOutSheet(p){
   return ('<h3>'+t('Çıkış sürecini başlat')+'</h3><form class="stack" data-form="startMoveOut" data-pid="')+p.id+'">' +
-    ('<div class="muted">'+t('Giriş tutanağındaki')+' ')+p.inspect.rooms.length+(' '+t('oda karşılaştırma için kopyalanır. Kiracı ve ev sahibi odaları birlikte değerlendirir, kesintiler iki tarafın onayından sonra kesinleşir.')+'</div>') +
+    ('<div class="muted">'+t('Giriş tutanağındaki')+' ')+p.inspect.rooms.length+(' '+t('alan karşılaştırma için kopyalanır. Kiracı ve mülk sahibi alanları birlikte değerlendirir, kesintiler iki tarafın onayından sonra kesinleşir.')+'</div>') +
     ('<label class="field">'+t('Çıkış tarihi')+'<input name="date" type="date" required value="')+iso(t0())+'"></label>' +
     ('<div class="row"><button type="button" class="btn ghost" style="flex:1" data-act="closeSheet">'+t('Vazgeç')+'</button>') +
     ('<button class="btn primary" style="flex:1">'+t('Başlat')+'</button></div></form>');
@@ -443,7 +474,7 @@ function accountSheet(){
   }[push];
   return ('<h3>'+t('Hesap')+'</h3><div class="stack">') +
     ('<div class="card"><div class="kv"><span>'+t('E-posta')+'</span><span>')+esc(live.user?.email || '')+'</span></div>' +
-      ('<div class="kv"><span>'+t('Hesap türü')+'</span><span>')+(prof.role === 'landlord' ? t('Ev sahibi') : t('Kiracı'))+'</span></div></div>' +
+      ('<div class="kv"><span>'+t('Hesap türü')+'</span><span>')+(prof.role === 'landlord' ? t('Mülk sahibi') : t('Kiracı'))+'</span></div></div>' +
     '<form class="stack" data-form="profile">' +
       ('<label class="field">'+t('Ad soyad')+'<input name="name" required maxlength="60" value="')+esc(prof.name || '')+'"></label>' +
       ('<label class="field">'+t('Telefon')+'<input name="phone" type="tel" value="')+esc(prof.phone || '')+'"></label>' +

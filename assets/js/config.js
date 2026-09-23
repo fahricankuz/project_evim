@@ -1,7 +1,7 @@
 /* Sunucu yapılandırması.
 
    Boş bırakılırsa uygulama DEMO modunda çalışır: veriler yalnızca bu
-   tarayıcıda durur, hesap gerekmez, kiracı/ev sahibi görünümleri arasında
+   tarayıcıda durur, hesap gerekmez, kiracı/mülk sahibi görünümleri arasında
    geçilebilir.
 
    Supabase projesi kurulunca (bkz. docs/kurulum.md) aşağıyı doldurun:

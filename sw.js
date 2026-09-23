@@ -2,7 +2,7 @@
    Yeni sürüm yayınlarken CACHE sürümünü artırın; testler SHELL listesinin
    assets/ klasörüyle eşleştiğini denetler. */
 
-const CACHE = 'evim-v5';
+const CACHE = 'evim-v6';
 
 const SHELL = [
   './',

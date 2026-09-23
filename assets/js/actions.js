@@ -1,12 +1,13 @@
 /* Etkileşimler: tıklama, form ve alan değişiklikleri. */
 
-import { S, ui, save, reset as resetState, replaceState, setTheme, seed, VERSION, STEPS } from './state.js';
+import { S, ui, save, reset as resetState, replaceState, setTheme, seed, VERSION, STEPS, AREA_TEMPLATES, TENANT_KINDS } from './state.js';
 import { go, openSheet, closeSheet, current, setParams } from './router.js';
 import {
-  P, period, statusOf, remaining, yearIncome, monthCollection, rentAt, normalize, tenantsLabel,
+  P, period, statusOf, remaining, yearIncome, monthCollection, rentAt, expectedAt, normalize, tenantsLabel,
   meTenant, senderName, unpaid, moveOutSummary, yearNumbers, sum
 } from './logic.js';
 import { estimate } from './tax.js';
+import { taxInput } from './views.js';
 import { render, refreshLayer } from './render.js';
 import { notify } from './notify.js';
 import { ask } from './confirm.js';
@@ -20,6 +21,15 @@ import { startTour, nextStep, prevStep, endTour, TOUR } from './tour.js';
 import {
   iso, t0, parse, fmt, fmtFull, monthYear, tl, daysTo, shrink, download, esc, announce, uid, percent
 } from './util.js';
+
+/** Formdaki kiracı türü alanlarından şirket bilgisi ve stopaj. */
+function lesseeFrom(fd){
+  if (String(fd.get('tenantKind') || TENANT_KINDS[0]) !== TENANT_KINDS[1]) return { company:null, stopaj:false };
+  return {
+    company:{ name:String(fd.get('coName') || '').trim(), taxNo:String(fd.get('coTaxNo') || '').trim(), taxOffice:String(fd.get('coTaxOffice') || '').trim() },
+    stopaj: !!fd.get('stopaj')
+  };
+}
 
 /** Mesaja kimlik verir; sunucu mesajları kimlikle eşleştirir. */
 function pushMsg(p, m){ p.msgs.push(Object.assign({ id: uid('m') }, m)); }
@@ -53,17 +63,31 @@ export const A = {
 
   switchRole: () => {
     const toLandlord = ui.role === 'tenant';
-    go(toLandlord ? '/ev-sahibi' : '/kiraci');
+    go(toLandlord ? '/mulk-sahibi' : '/kiraci');
     notify({
-      title: toLandlord ? t('Ev sahibi görünümü') : t('Kiracı görünümü'),
-      body: toLandlord ? t('Üç evinin genel durumunu görüyorsun.') : t('Moda’daki evin kiracısı olarak görüyorsun.'),
+      title: toLandlord ? t('Mülk sahibi görünümü') : t('Kiracı görünümü'),
+      body: toLandlord ? t('Mülklerinin genel durumunu görüyorsun.') : t('Moda’daki evin kiracısı olarak görüyorsun.'),
       icon:'home'
     }, false);
   },
 
-  goMsg: d => go(ui.role === 'tenant' ? '/kiraci/mesajlar' : '/ev-sahibi/ev/'+d.pid+'/mesaj'),
+  goMsg: d => go(ui.role === 'tenant' ? '/kiraci/mesajlar' : '/mulk-sahibi/mulk/'+d.pid+'/mesaj'),
 
   reqTab: d => { ui.reqTab = d.v; render(); },
+  propFilter: d => { ui.propFilter = d.v; render(); },
+  newPropType: d => {
+    // Formdaki yazılanları koruyarak tipi değiştir.
+    const f = document.querySelector('form[data-form="addProp"]');
+    const keep = f ? Object.fromEntries(new FormData(f)) : {};
+    ui.newPropType = d.v;
+    refreshLayer();
+    const nf = document.querySelector('form[data-form="addProp"]');
+    if (nf) Object.entries(keep).forEach(([k, v]) => { const el = nf.elements[k]; if (el && k !== 'type' && el.type !== 'checkbox') el.value = v; });
+  },
+  suggestTitle: d => {
+    const el = document.querySelector('form[data-form="newReq"] [name=title]');
+    if (el){ el.value = d.v; el.focus(); }
+  },
 
   openReq: d => openSheet('talep', { pid:d.pid, id:d.id }),
 
@@ -197,7 +221,7 @@ export const A = {
   approveInspect: d => {
     const p = P(d.pid);
     if (ui.role === 'tenant') p.inspect.tenantOk = true; else p.inspect.landlordOk = true;
-    sysMsg(p, t('Giriş tutanağı {who} tarafından onaylandı', { who: ui.role === 'tenant' ? t('kiracı') : t('ev sahibi') }));
+    sysMsg(p, t('Giriş tutanağı {who} tarafından onaylandı', { who: ui.role === 'tenant' ? t('kiracı') : t('mülk sahibi') }));
     save(); render();
     notify({
       title:t('Tutanak onaylandı'),
@@ -212,7 +236,7 @@ export const A = {
     const p = P(d.pid);
     const body = p.name+' · '+p.addr+('\n'+t('Giriş tutanağı ·')+' ')+fmtFull(new Date())+'\n\n' +
       p.inspect.rooms.map(r => '- '+r.n+': '+t('{n} fotoğraf', { n:(r.photos||0)+(r.shots||[]).length })+(r.note ? ' · '+r.note : '')).join('\n') +
-      ('\n\n'+t('Kiracı onayı:')+' ')+(p.inspect.tenantOk ? t('var') : t('yok'))+('\n'+t('Ev sahibi onayı:')+' ')+(p.inspect.landlordOk ? t('var') : t('yok'));
+      ('\n\n'+t('Kiracı onayı:')+' ')+(p.inspect.tenantOk ? t('var') : t('yok'))+('\n'+t('Mülk sahibi onayı:')+' ')+(p.inspect.landlordOk ? t('var') : t('yok'));
     openText(t('Tutanak dökümü'), body);
   },
 
@@ -227,14 +251,21 @@ export const A = {
   shareReport: () => {
     const year = String(ui.reportYear || new Date().getFullYear());
     const yn = yearNumbers(year);
-    const e = estimate(yn.gross, yn.exp, { year:Number(year), noExemption:!!ui.noExemption });
-    const body = year+(' '+t('yılı konut kira geliri özeti')+'\n\n') +
-      yn.rows.map(r => { const p = P(r.id); return p.name+' ('+p.addr+(t(')\n  Tahsil edilen:')+' ')+tl(r.gross)+('  '+t('·  Giderler:')+' ')+tl(r.exp); }).join('\n') +
-      ('\n\n'+t('Toplam tahsil edilen:')+' ')+tl(yn.gross) +
+    const e = estimate(taxInput(yn), { year:Number(year), noExemption:!!ui.noExemption });
+    const pay = m => m.payable < 0 ? t('İade {amount}', { amount:tl(-m.payable) }) : tl(m.payable);
+    const body = t('{year} yılı kira geliri özeti', { year })+'\n\n' +
+      yn.rows.map(r => { const p = P(r.id); return p.name+' · '+t(p.type)+' ('+p.addr+')\n  '+t('Brüt kira')+': '+tl(r.gross) +
+        (r.withheld ? '  ·  '+t('Stopaj')+': '+tl(r.withheld) : '')+('  '+t('·  Giderler:')+' ')+tl(r.exp); }).join('\n') +
+      ('\n\n'+t('Konut kira geliri')+': ')+tl(e.konut.gross) +
+      (e.stopajli.gross ? '\n'+t('İşyeri kira geliri (stopajlı)')+': '+tl(e.stopajli.gross)+' · '+t('Stopaj')+': '+tl(e.stopajli.withheld) +
+        (e.includeW ? '' : ' — '+t('beyan sınırının altında, beyana eklenmez')) : '') +
+      (e.diger.gross ? '\n'+t('İşyeri kira geliri (stopajsız)')+': '+tl(e.diger.gross) : '') +
       ('\n'+t('Toplam belgeli gider:')+' ')+tl(yn.exp) +
-      ('\n'+t('İstisna ('))+e.rates.year+'): '+(ui.noExemption ? t('uygulanmıyor') : tl(e.istisna)) +
-      (e.belowExemption ? ('\n\n'+t('Gelir istisna tutarının altında.')) :
-        ('\n\n'+t('Tahmini vergi — götürü gider:')+' ')+tl(e.goturu.tax)+(' '+t('· gerçek gider:')+' ')+tl(e.gercek.tax) +
+      (e.konut.gross ? ('\n'+t('İstisna ('))+e.rates.year+'): '+(ui.noExemption ? t('uygulanmıyor') : tl(e.istisna)) : '') +
+      (e.belowExemption ? ('\n\n'+t('Bu yıl için kira geliri beyanı gerekmeyebilir.')) :
+        '\n'+t('Beyana giren gelir')+': '+tl(e.declared) +
+        (e.credit ? '\n'+t('Mahsup edilecek stopaj')+': '+tl(e.credit) : '') +
+        ('\n\n'+t('Tahmini vergi — götürü gider:')+' ')+pay(e.goturu)+(' '+t('· gerçek gider:')+' ')+pay(e.gercek) +
         ('\n'+t('Daha avantajlı yöntem:')+' ')+(e.best === 'gercek' ? t('gerçek gider') : t('götürü gider'))) +
       (e.rates.approx ? ('\n\n'+t('Uyarı:')+' ')+year+(' '+t('oranları eklenmediği için')+' ')+e.rates.year+(' '+t('oranları kullanıldı.')) : '') +
       ('\n\n'+t('Not: Onaylanmış ve kısmi ödemelerden hesaplanmıştır. Tahmindir; beyan için mali müşavirinize danışın.'));
@@ -242,12 +273,12 @@ export const A = {
   },
 
   exportCsv: () => {
-    const rows = [[t('Tür'),t('Ev'),t('Dönem / tarih'),t('Durum / kategori'),t('Tutar'),t('Açıklama')]];
+    const rows = [[t('Tür'),t('Mülk'),t('Dönem / tarih'),t('Durum / kategori'),t('Tutar'),t('Açıklama')]];
     S.order.forEach(id => {
       const p = P(id);
       Object.keys(p.pay).sort().forEach(k => {
         const r = p.pay[k];
-        rows.push([t('Ödeme'), p.name, k, r.status, r.amount != null ? r.amount : rentAt(p, k), r.date || '']);
+        rows.push([t('Ödeme'), p.name, k, r.status, r.amount != null ? r.amount : expectedAt(p, k), r.date || '']);
       });
       (p.expenses || []).slice().sort((a, b) => a.date < b.date ? -1 : 1).forEach(e => {
         rows.push([t('Gider'), p.name, e.date, e.cat, e.amount, e.note || '']);
@@ -293,13 +324,13 @@ export const A = {
   },
 
   removeProp: async d => {
-    const name = P(d.pid)?.name || t('Bu ev');
-    if (!await ask({ title:name+(' '+t('kaldırılsın mı?')), body:t('Evin ödemeleri, talepleri, mesajları ve belgeleri de silinir.'), ok:t('Kaldır'), danger:true })) return;
+    const name = P(d.pid)?.name || t('Bu mülk');
+    if (!await ask({ title:name+(' '+t('kaldırılsın mı?')), body:t('Mülkün ödemeleri, talepleri, mesajları ve belgeleri de silinir.'), ok:t('Kaldır'), danger:true })) return;
     delete S.props[d.pid];
     S.order = S.order.filter(x => x !== d.pid);
     if (S.myHome === d.pid) S.myHome = S.order[0];
     save();
-    go('/ev-sahibi', { replace:true });
+    go('/mulk-sahibi', { replace:true });
     render();
   },
 
@@ -310,20 +341,20 @@ export const A = {
     const map = {
       rent:{ title:t('Kira günü yaklaşıyor'), body: monthYear(period(moda).key)+(' '+t('kirası yaklaşıyor. Ödeyince dekontu yükle.')), icon:'card',
              actions:[{ label:t('Ödemelere git'), run:() => go('/kiraci/odemeler') }] },
-      reqUpd:{ title:t('Talebin güncellendi'), body:t('Kombi basıncı düşüyor → Usta çağrıldı. Masraf ev sahibinde.'), icon:'wrench',
+      reqUpd:{ title:t('Talebin güncellendi'), body:t('Kombi basıncı düşüyor → Usta çağrıldı. Masraf mülk sahibinde.'), icon:'wrench',
              actions:[{ label:t('Talebi aç'), run:() => go('/kiraci/talepler') }] },
-      renew:{ title:t('Yenileme teklifi geldi'), body:t('Ev sahibin yeni dönem için teklif gönderdi. Yasal üst sınırla karşılaştırarak incele.'), icon:'card',
+      renew:{ title:t('Yenileme teklifi geldi'), body:t('Mülk sahibin yeni dönem için teklif gönderdi. Yasal üst sınırla karşılaştırarak incele.'), icon:'card',
              actions:[{ label:t('İncele'), run:() => go('/kiraci/odemeler') }] },
       evict:{ title:t('Tahliye tarihi yaklaşıyor'), body:t('Taahhütnamedeki tarihe yaklaşıldı.'), icon:'doc',
              actions:[{ label:t('Belgeler'), run:() => go('/kiraci/belgeler') }] },
       receipt:{ title:cih.name+': dekont geldi', body:t('Bu ayın kirası için dekont yüklendi. Onayını bekliyor.'), icon:'card',
-             actions:[{ label:t('Onayla'), run:() => go('/ev-sahibi/ev/'+cih.id+'/odeme') }] },
+             actions:[{ label:t('Onayla'), run:() => go('/mulk-sahibi/mulk/'+cih.id+'/odeme') }] },
       late:{ title:t('Kira gecikti'), body:t('Bu ayın kirası henüz ödenmedi. Nazik bir hatırlatma gönderebilirsin.'), icon:'card',
-             actions:[{ label:t('Portföye git'), run:() => go('/ev-sahibi') }] },
+             actions:[{ label:t('Portföye git'), run:() => go('/mulk-sahibi') }] },
       newReq:{ title:cih.name+': yeni talep', body:t('Banyo aspiratörü değişimi · fotoğraf ekli.'), icon:'wrench',
-             actions:[{ label:t('Talebi aç'), run:() => go('/ev-sahibi/ev/'+cih.id+'/talep') }] },
+             actions:[{ label:t('Talebi aç'), run:() => go('/mulk-sahibi/mulk/'+cih.id+'/talep') }] },
       dask:{ title:t('DASK yenileme'), body:cih.name+(' '+t('poliçesi')+' ')+daysTo(cih.dask)+(' '+t('gün içinde bitiyor.')), icon:'doc',
-             actions:[{ label:t('Belgelere git'), run:() => go('/ev-sahibi/ev/'+cih.id+'/belge') }] }
+             actions:[{ label:t('Belgelere git'), run:() => go('/mulk-sahibi/mulk/'+cih.id+'/belge') }] }
     };
     notify(map[d.v]);
   },
@@ -333,7 +364,7 @@ export const A = {
     const p = P(d.pid);
     const tn = p.tenants.find(x => x.id === d.id);
     if (!tn) return;
-    if (!await ask({ title:tn.name+(' '+t('evden çıkarılsın mı?')), body:t('Bu kiracı artık evin ödemelerini, taleplerini ve yazışmalarını göremez. Geçmiş kayıtlar korunur.'), ok:t('Çıkar'), danger:true })) return;
+    if (!await ask({ title:tn.name+(' '+t('mülkten çıkarılsın mı?')), body:t('Bu kiracı artık mülkün ödemelerini, taleplerini ve yazışmalarını göremez. Geçmiş kayıtlar korunur.'), ok:t('Çıkar'), danger:true })) return;
     if (LIVE){
       try {
         if (tn.pending) await backend.deleteInvite(p.id, tn.code);
@@ -343,7 +374,7 @@ export const A = {
       return;
     }
     p.tenants = p.tenants.filter(x => x.id !== d.id);
-    sysMsg(p, tn.name+(' '+t('evden çıkarıldı')));
+    sysMsg(p, tn.name+(' '+t('mülkten çıkarıldı')));
     save(); render();
   },
 
@@ -407,7 +438,7 @@ export const A = {
     const p = P(d.pid), mo = p.moveOut;
     if (ui.role === 'tenant') mo.tenantOk = true; else mo.landlordOk = true;
     const both = mo.tenantOk && mo.landlordOk;
-    sysMsg(p, t('Çıkış hesabı {who} tarafından onaylandı', { who: ui.role === 'tenant' ? t('kiracı') : t('ev sahibi') })+(both ? (' '+t('· iade:')+' ')+tl(moveOutSummary(p).refund) : ''));
+    sysMsg(p, t('Çıkış hesabı {who} tarafından onaylandı', { who: ui.role === 'tenant' ? t('kiracı') : t('mülk sahibi') })+(both ? (' '+t('· iade:')+' ')+tl(moveOutSummary(p).refund) : ''));
     save(); render();
     notify({ title:t('Çıkış hesabı onaylandı'), body: both ? t('İki taraf da onayladı; iade tutarı kesinleşti.') : t('Karşı tarafın onayı bekleniyor.'), icon:'key' });
   },
@@ -433,7 +464,7 @@ export const A = {
       ('\n\n'+t('KESİNTİLER')+'\n') + (mo.deductions.length ? mo.deductions.map(x => '- '+x.label+': '+tl(x.amount)+(x.note ? ' ('+x.note+')' : '')).join('\n') : '- yok') +
       ('\n\n'+t('Depozito:')+' ')+tl(sm.deposit)+('\n'+t('Kesinti toplamı:')+' ')+tl(sm.deducted)+('\n'+t('İade:')+' ')+tl(sm.refund) +
       (sm.extra ? ('\n'+t('Kiracıdan ayrıca talep:')+' ')+tl(sm.extra) : '') +
-      ('\n\n'+t('Kiracı onayı:')+' ')+(mo.tenantOk ? t('var') : t('yok'))+('\n'+t('Ev sahibi onayı:')+' ')+(mo.landlordOk ? t('var') : t('yok')) +
+      ('\n\n'+t('Kiracı onayı:')+' ')+(mo.tenantOk ? t('var') : t('yok'))+('\n'+t('Mülk sahibi onayı:')+' ')+(mo.landlordOk ? t('var') : t('yok')) +
       (mo.refunded ? ('\n'+t('İade yapıldı:')+' ')+tl(mo.refunded.amount)+' · '+fmtFull(parse(mo.refunded.date)) : '');
     openText(t('Çıkış raporu'), body);
   },
@@ -516,9 +547,9 @@ export async function onSubmit(ev){
     p.requests.unshift(r);
     sysMsg(p, (t('Yeni talep açıldı:')+' ')+r.title);
     save();
-    go(ui.role === 'tenant' ? '/kiraci/talepler' : '/ev-sahibi/ev/'+p.id+'/talep', { replace:true });
+    go(ui.role === 'tenant' ? '/kiraci/talepler' : '/mulk-sahibi/mulk/'+p.id+'/talep', { replace:true });
     render();
-    notify({ title:t('Talep gönderildi'), body:t('Ev sahibine bildirildi. Durum değiştikçe haber vereceğiz.'), icon:'wrench' });
+    notify({ title:t('Talep gönderildi'), body:t('Mülk sahibine bildirildi. Durum değiştikçe haber vereceğiz.'), icon:'wrench' });
     return;
   }
 
@@ -530,7 +561,7 @@ export async function onSubmit(ev){
     const prev = p.pay[key];
     const already = prev && prev.status === 'partial' ? Number(prev.amount) || 0 : 0;
     const total = already + amount;
-    const due = rentAt(p, key);
+    const due = expectedAt(p, key);
 
     const rec = {
       status: total < due ? 'partial' : 'review',
@@ -552,7 +583,7 @@ export async function onSubmit(ev){
       title: rec.status === 'partial' ? t('Kısmi ödeme kaydedildi') : t('Dekont yüklendi'),
       body: rec.status === 'partial'
         ? tl(due - total)+(' '+t('bakiye görünüyor; kalanı yükleyince onaya gider.'))
-        : t('Ev sahibinin onayı bekleniyor. Onaylanınca haber vereceğiz.'),
+        : t('Mülk sahibinin onayı bekleniyor. Onaylanınca haber vereceğiz.'),
       icon:'card'
     });
     return;
@@ -601,26 +632,32 @@ export async function onSubmit(ev){
   if (type === 'addProp'){
     const id = uid('p'), today = t0();
     const name = String(fd.get('name')).trim();
+    const ptype = String(fd.get('type') || 'Konut');
+    const lessee = lesseeFrom(fd);
     const rent = Number(fd.get('rent')) || 0;
     const phone = String(fd.get('phone') || '');
     S.props[id] = {
-      id, name, addr:String(fd.get('addr')).trim(),
+      id, type:ptype, area:null, company:lessee.company, stopaj:lessee.stopaj, depositKind:'Nakit',
+      name, addr:String(fd.get('addr')).trim(),
       // Gerçek hesapta kiracı davetle katılır; demoda yer tutucu eklenir.
       tenants: LIVE ? [] : [{ id:uid('t'), name:'Davet bekleniyor', phone, email:'' }],
-      landlord: LIVE ? { name: backend.live.profile?.name || t('Ev sahibi'), phone: backend.live.profile?.phone || '' } : (S.order.length ? P(S.order[0]).landlord : { name:'Ev sahibi', phone:'' }),
+      landlord: LIVE ? { name: backend.live.profile?.name || t('Mülk sahibi'), phone: backend.live.profile?.phone || '' } : (S.order.length ? P(S.order[0]).landlord : { name:t('Mülk sahibi'), phone:'' }),
       ownerId: LIVE ? backend.live.user?.id : undefined,
       rent, dueDay: Number(fd.get('due')) || 1,
       rentHistory:[{ from: iso(today), amount: rent, note:t('Sözleşme başlangıcı') }],
       expenses:[], value:null, moveOut:null,
       aidat:0, aidatPayer:'Kiracı', deposit:0, depositNote:'—',
-      startDate: iso(today), contractEnd: iso(new Date(today.getFullYear()+1, today.getMonth(), today.getDate())), dask: iso(new Date(today.getFullYear()+1, today.getMonth(), today.getDate())),
+      startDate: iso(today), contractEnd: iso(new Date(today.getFullYear()+1, today.getMonth(), today.getDate())),
+      // DASK yalnızca konutta zorunlu; işyerinde tarih girilirse hatırlatılır.
+      dask: ptype === 'Konut' ? iso(new Date(today.getFullYear()+1, today.getMonth(), today.getDate())) : null,
       bills:[], pay:{}, requests:[], msgs:[], docs:[],
-      inspect:{ tenantOk:false, landlordOk:false, rooms:[{ n:'Salon', photos:0, shots:[], note:'' }] },
+      inspect:{ tenantOk:false, landlordOk:false, rooms:(AREA_TEMPLATES[ptype] || AREA_TEMPLATES['Konut']).map(n => ({ n:t(n), photos:0, shots:[], note:'' })) },
       renewal:null
     };
     S.order.push(id);
+    ui.newPropType = null;
     save();
-    go('/ev-sahibi/ev/'+id, { replace:true });
+    go('/mulk-sahibi/mulk/'+id, { replace:true });
     render();
 
     if (LIVE){
@@ -634,7 +671,7 @@ export async function onSubmit(ev){
 
     const ph = phone.replace(/\D/g, '');
     notify({
-      title:t('Ev eklendi'), body:t('Kiracıya davet linkini gönder.'), icon:'home',
+      title:t('Mülk eklendi'), body:t('Kiracıya davet linkini gönder.'), icon:'home',
       actions:[{ label:t('WhatsApp ile davet et'), run:() => {
         const num = ph ? '9' + ph.replace(/^9/, '') : '';
         window.open('https://wa.me/'+num+'?text='+encodeURIComponent((t('Merhaba,')+' ')+name+(' '+t('için Evim’de ortak panelimize katılır mısın? [davet linki]'))), '_blank', 'noopener');
@@ -656,7 +693,7 @@ export async function onSubmit(ev){
       return;
     }
     p.tenants.push({ id:uid('t'), name, email, phone });
-    sysMsg(p, name+(' '+t('eve kiracı olarak eklendi')));
+    sysMsg(p, name+(' '+t('mülke kiracı olarak eklendi')));
     save(); closeSheet(); render();
     setTimeout(() => openSheet('davet-paylas', { pid:p.id, code:'DEMO' + String(Math.floor(Math.random() * 9000) + 1000) }), 60);
     return;
@@ -747,6 +784,13 @@ export async function onSubmit(ev){
   if (type === 'editProp'){
     p.name = String(fd.get('name')).trim();
     p.addr = String(fd.get('addr')).trim();
+    p.type = String(fd.get('type') || p.type);
+    p.area = Number(fd.get('area')) || null;
+    const lessee = lesseeFrom(fd);
+    p.company = lessee.company;
+    p.stopaj = lessee.stopaj;
+    p.depositKind = String(fd.get('depositKind') || 'Nakit');
+    p.depositNote = String(fd.get('depositNote') || '').trim();
     const newRent = Number(fd.get('rent')) || p.rent;
     if (newRent !== p.rent){
       const today = iso(t0());
@@ -759,7 +803,7 @@ export async function onSubmit(ev){
     p.aidatPayer = fd.get('aidatPayer');
     p.deposit = Number(fd.get('deposit')) || 0;
     if (fd.get('contractEnd')) p.contractEnd = String(fd.get('contractEnd'));
-    if (fd.get('dask')) p.dask = String(fd.get('dask'));
+    p.dask = fd.get('dask') ? String(fd.get('dask')) : (p.type === 'Konut' ? p.dask : null);
     normalize(p);
     save();
     closeSheet();
@@ -865,6 +909,12 @@ export async function onChangeField(ev){
     const ok = save();
     render();
     if (!ok) notify({ title:t('Yer kalmadı'), body:t('Tarayıcı depolaması doldu; fotoğraflar kaydedilemedi.'), icon:'cam' }, false);
+    return;
+  }
+
+  if (n === 'tenantKind'){
+    const box = ev.target.closest('form')?.querySelector('[data-company]');
+    if (box) box.classList.toggle('hidden', ev.target.value !== TENANT_KINDS[1]);
     return;
   }
 

@@ -5,7 +5,7 @@
 
 import { parse, iso, addM, mkey } from './util.js';
 
-export const VERSION = 3;
+export const VERSION = 4;
 
 /** Eski anahtarlar: bulunursa taşınır, kendileri olduğu gibi bırakılır. */
 export const LEGACY_KEYS = ['evim-proto-v1'];
@@ -67,6 +67,25 @@ const STEPS = {
       });
       // Eski mesajlarda gönderen kiracı tekti.
       p.msgs.forEach(m => { if (m.from === 'tenant' && !m.by) m.by = p.tenants[0].id; });
+    });
+    return out;
+  },
+
+  /* v3 → v4: mülk tipi (konut/ofis/mağaza/depo), kiracı şirket bilgisi,
+     kira stopajı, depozito türü ve alan (m²). "Ev sahibi" değeri "Mülk sahibi" olur. */
+  3(s){
+    const out = JSON.parse(JSON.stringify(s));
+    out.v = 4;
+    const owner = v => v === 'Ev sahibi' ? 'Mülk sahibi' : v;
+    Object.values(out.props).forEach(p => {
+      p.type = p.type || 'Konut';
+      p.area = p.area == null ? null : p.area;
+      p.company = p.company || null;
+      p.stopaj = !!p.stopaj;
+      p.depositKind = p.depositKind || 'Nakit';
+      p.aidatPayer = owner(p.aidatPayer);
+      (p.bills || []).forEach(b => { b.who = owner(b.who); });
+      (p.requests || []).forEach(r => { r.cost = owner(r.cost); });
     });
     return out;
   }

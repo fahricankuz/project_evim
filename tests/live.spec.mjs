@@ -22,7 +22,7 @@ const sheet = page => page.locator('#layer .sheet');
 async function signup(page, { name, email, password = 'gizli-sifre-1', role }){
   await page.goto('index.html#/kayit');
   await expect(page.locator('#screen h1')).toHaveText('Kayıt ol');
-  await page.click(role === 'landlord' ? '.rolecard:has-text("Ev sahibiyim")' : '.rolecard:has-text("Kiracıyım")');
+  await page.click(role === 'landlord' ? '.rolecard:has-text("Mülk sahibiyim")' : '.rolecard:has-text("Kiracıyım")');
   await page.fill('input[name=name]', name);
   await page.fill('input[name=email]', email);
   await page.fill('input[name=password]', password);
@@ -43,7 +43,7 @@ async function logout(page){
 }
 
 test('oturum yokken giriş ekranı açılır; demo öğeleri görünmez', async ({ page }) => {
-  await page.goto('index.html#/ev-sahibi/rapor');
+  await page.goto('index.html#/mulk-sahibi/rapor');
   await expect(page).toHaveURL(/#\/giris$/);
   await expect(page.locator('#screen h1')).toHaveText('Giriş yap');
   await expect(page.locator('#tabbar')).toBeHidden();
@@ -53,11 +53,11 @@ test('oturum yokken giriş ekranı açılır; demo öğeleri görünmez', async 
 test('ev sahibi ve kiracı: kayıt, ev, davet, dekont, mesaj, onay', async ({ page }) => {
   // 1) Ev sahibi kaydolur, boş portföy görür, ev ekler.
   await signup(page, { name:'Ayşe Sahip', email:'ayse@ornek.com', role:'landlord' });
-  await expect(page).toHaveURL(/#\/ev-sahibi$/);
-  await expect(screen(page)).toContainText('İlk evini ekle');
+  await expect(page).toHaveURL(/#\/mulk-sahibi$/);
+  await expect(screen(page)).toContainText('İlk mülkünü ekle');
   await expect(page.locator('.rolepill.status')).toContainText('Ayşe');
 
-  await page.click('#screen button:has-text("Ev ekle")');
+  await page.click('#screen button:has-text("Mülk ekle")');
   await sheet(page).locator('input[name=name]').fill('Test Evi');
   await sheet(page).locator('input[name=addr]').fill('Deneme Sk. 1');
   await sheet(page).locator('input[name=rent]').fill('25000');
@@ -78,10 +78,10 @@ test('ev sahibi ve kiracı: kayıt, ev, davet, dekont, mesaj, onay', async ({ pa
   // 3) Kiracı davet bağlantısıyla gelir, kaydolur ve eve otomatik bağlanır.
   await logout(page);
   await page.goto('index.html#/katil/' + code);
-  await expect(page.locator('#screen h1')).toHaveText('Evine davet edildin');
+  await expect(page.locator('#screen h1')).toHaveText('Kiraladığın mülke davet edildin');
   await page.click('button:has-text("Kiracı hesabı oluştur")');
   await expect(page.locator('.note')).toContainText(code);
-  await expect(page.locator('.rolecard:has-text("Ev sahibiyim")')).toHaveClass(/off/);
+  await expect(page.locator('.rolecard:has-text("Mülk sahibiyim")')).toHaveClass(/off/);
   await page.fill('input[name=name]', 'Mehmet Kiracı');
   await page.fill('input[name=email]', 'mehmet@ornek.com');
   await page.fill('input[name=password]', 'gizli-sifre-2');
@@ -92,7 +92,7 @@ test('ev sahibi ve kiracı: kayıt, ev, davet, dekont, mesaj, onay', async ({ pa
   await expect(screen(page)).toContainText('Ayşe Sahip');
 
   // 4) Kiracı ev sahibi ekranlarına giremez.
-  await page.goto('index.html#/ev-sahibi/rapor');
+  await page.goto('index.html#/mulk-sahibi/rapor');
   await expect(page).toHaveURL(/#\/kiraci$/);
 
   // 5) Dekont yükler: ödeme satırı ve dosya sunucuya gider.
@@ -119,24 +119,24 @@ test('ev sahibi ve kiracı: kayıt, ev, davet, dekont, mesaj, onay', async ({ pa
   // 7) Ev sahibi girer, kiracıyı ve mesajı görür, ödemeyi onaylar.
   await logout(page);
   await login(page, 'ayse@ornek.com');
-  await expect(page).toHaveURL(/#\/ev-sahibi$/);
+  await expect(page).toHaveURL(/#\/mulk-sahibi$/);
   const pid = (await db(page)).tables.properties[0].id;
-  await page.goto('index.html#/ev-sahibi/ev/' + pid);
+  await page.goto('index.html#/mulk-sahibi/mulk/' + pid);
   await expect(screen(page)).toContainText('Mehmet Kiracı');
   await expect(screen(page)).not.toContainText('Davet bekleniyor');
-  await page.goto('index.html#/ev-sahibi/ev/' + pid + '/mesaj');
+  await page.goto('index.html#/mulk-sahibi/mulk/' + pid + '/mesaj');
   await expect(screen(page)).toContainText('Merhaba, dekontu yükledim');
-  await page.goto('index.html#/ev-sahibi/ev/' + pid + '/odeme');
+  await page.goto('index.html#/mulk-sahibi/mulk/' + pid + '/odeme');
   await page.click('.hero button:has-text("Onayla")');
   await expect.poll(async () => (await db(page)).tables.payments[0].status).toBe('approved');
 });
 
 test('oturum sayfa yenilense de açık kalır', async ({ page }) => {
   await signup(page, { name:'Kalıcı Kullanıcı', email:'kalici@ornek.com', role:'landlord' });
-  await expect(page).toHaveURL(/#\/ev-sahibi$/);
+  await expect(page).toHaveURL(/#\/mulk-sahibi$/);
   await page.reload();
   await expect(page.locator('#screen h1')).toHaveText('Portföyüm');
-  await expect(page).toHaveURL(/#\/ev-sahibi$/);
+  await expect(page).toHaveURL(/#\/mulk-sahibi$/);
 });
 
 test('hatalı şifre anlaşılır bir mesaj gösterir', async ({ page }) => {
@@ -164,7 +164,7 @@ test('kayıt formu eksikleri söyler, e-posta doğrulaması gerekiyorsa bilgi ve
 
 test('evsiz kiracı kodu sonradan girerek bağlanır', async ({ page }) => {
   await signup(page, { name:'Sahip', email:'s@ornek.com', role:'landlord' });
-  await page.click('#screen button:has-text("Ev ekle")');
+  await page.click('#screen button:has-text("Mülk ekle")');
   await sheet(page).locator('input[name=name]').fill('Kodlu Ev');
   await sheet(page).locator('input[name=addr]').fill('Adres');
   await sheet(page).locator('input[name=rent]').fill('10000');
@@ -176,17 +176,17 @@ test('evsiz kiracı kodu sonradan girerek bağlanır', async ({ page }) => {
   await signup(page, { name:'Kiracı', email:'k@ornek.com', role:'tenant' });
   await expect(page).toHaveURL(/#\/davet$/);
   await page.fill('input[name=code]', 'YANLIS');
-  await page.click('button:has-text("Eve bağlan")');
+  await page.click('button:has-text("Mülke bağlan")');
   await expect(page.locator('.note.warn')).toContainText('bulunamadı');
   await page.fill('input[name=code]', code.toLowerCase());
-  await page.click('button:has-text("Eve bağlan")');
+  await page.click('button:has-text("Mülke bağlan")');
   await expect(page).toHaveURL(/#\/kiraci$/);
   await expect(page.locator('#screen h1')).toHaveText('Kodlu Ev');
 });
 
 test('sunucu değişikliği reddederse kullanıcıya söylenir ve kayıt geri alınır', async ({ page }) => {
   await signup(page, { name:'Sahip', email:'r@ornek.com', role:'landlord' });
-  await page.click('#screen button:has-text("Ev ekle")');
+  await page.click('#screen button:has-text("Mülk ekle")');
   await sheet(page).locator('input[name=name]').fill('Ret Evi');
   await sheet(page).locator('input[name=addr]').fill('Adres');
   await sheet(page).locator('input[name=rent]').fill('10000');
@@ -196,7 +196,7 @@ test('sunucu değişikliği reddederse kullanıcıya söylenir ve kayıt geri al
 
   const pid = (await db(page)).tables.properties[0].id;
   await page.evaluate(() => { globalThis.__fakeClient._fail = (t, op) => t === 'expenses' && op === 'upsert'; });
-  await page.goto('index.html#/ev-sahibi/ev/' + pid + '/gider');
+  await page.goto('index.html#/mulk-sahibi/mulk/' + pid + '/gider');
   await page.click('button:has-text("Gider ekle")');
   await sheet(page).locator('input[name=amount]').fill('777');
   await sheet(page).locator('input[name=note]').fill('Reddedilecek');
