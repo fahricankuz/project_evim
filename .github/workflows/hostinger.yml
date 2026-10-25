@@ -45,7 +45,7 @@ jobs:
           cd hostinger-site
           zip -qr ../kiracim-hostinger.zip . -x '.git/*'
           ls -la ..
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kiracim-hostinger
           path: kiracim-hostinger.zip
