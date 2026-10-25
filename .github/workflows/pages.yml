@@ -60,7 +60,7 @@ jobs:
           cp ../_site/+not-found.html ../_site/404.html
           touch ../_site/.nojekyll
           if [ -n "$CUSTOM_DOMAIN" ]; then echo "$CUSTOM_DOMAIN" > ../_site/CNAME; fi
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
