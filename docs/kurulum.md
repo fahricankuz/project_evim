@@ -171,13 +171,117 @@ Bundan sonra varsayılan dala her gönderimde site `https://kiracim.online/`
 adresinde güncellenir. Telefon uygulamasının bağlantıları da bu alan adıyla
 çalışır: [mobil.md](mobil.md#3-bağlantıların-uygulamayı-açması).
 
+## Uygulama (React Native) ve yönetici paneli
+
+`app/` klasöründeki uygulama aynı Supabase projesini kullanır. Derleme sırasında
+iki değişken verilir (`anon` anahtarı herkese açıktır; `service_role` anahtarını
+hiçbir yere yazma):
+
+```bash
+cd app
+EXPO_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co \
+EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi... \
+npx expo export -p web
+```
+
+Değişkenler boşsa uygulama yerel hesap moduyla açılır (veri yalnızca o cihazda).
+
+### Yönetici (denetçi) hesabı
+
+1. `supabase/schema.sql` dosyasını yukarıdaki gibi yeniden çalıştır (tekrar
+   çalıştırılabilir; `admins`, `reviews`, `bans` ve `admin_audit` tablolarını, denetim ve
+   yasaklama kurallarını, mevcut yüklemeler için "onaylı" kayıtları ekler).
+2. Uygulamadan normal bir hesap aç (kiracı olarak kayıt olman yeterli).
+3. **SQL Editor**'de kendi e-postanı yönetici yap:
+
+```sql
+insert into public.admins (user_id)
+select id from auth.users where email = 'senin@epostan.com';
+```
+
+4. Bu hesapla giriş yapınca `/admin` açılır; yönetici hesapları ev verisi yüklemez.
+   Yöneticiyi kaldırmak için `delete from public.admins where user_id = '…'`.
+
+### Yönetici panelinde ne var
+
+Yalnızca `admins` tablosundaki hesap açabilir; başka hesap `/admin` adresinde hiçbir veri görmez
+(sunucu kuralları veri vermez, ekran yalnızca gösterir).
+
+- **Denetim**: kiracı dekontları, her iki tarafın belgeleri ve mülk sahibinin
+  faturaları. Önizleme, **Onayla** ya da gerekçeyle **Reddet**.
+- **Ödemeler**: kim kime, hangi mülk ve ay için, ne kadar ödemiş; durum ve denetim durumu.
+- **Bağlantılar**: mülk sahibi → mülkler → kiracılar (bekleyen davetler dahil), abonelik durumu.
+  Kayıt olup davet kodunu girmemiş ("mülke bağlı olmayan") kiracılar ayrıca listelenir.
+- **Mesajlar**: mesajlaşması olan her mülk; bir yazışmayı aç, mesajları ve fotoğrafları oku,
+  uygunsuz mesajı sil, göndereni oradan yasakla.
+- **Kullanıcılar**: tüm hesaplar; ara, role ya da "askıda" durumuna göre süz, **Yasakla / Yasağı kaldır**.
+- **Kayıt**: yöneticinin yaptığı hassas işlemler (yasaklama, yazışma okuma, mesaj silme, yükleme kararı).
+  Kayıt değiştirilemez ve silinemez; yönetici bile dokunamaz.
+
+#### Yasaklama nasıl çalışır
+
+Gerekçe zorunludur ve kullanıcıya gösterilir. Yasaklanan hesap:
+
+1. Hiçbir tabloyu okuyamaz ya da yazamaz (veritabanı kuralı), dosyalarına erişemez, davete katılamaz.
+2. Supabase Auth'ta girişi kapanır (`banned_until`) ve açık oturumları silinir.
+3. Giriş denerse "Hesabın askıya alındı: <gerekçe>" görür.
+
+Yönetici kendini ya da başka bir yöneticiyi yasaklayamaz. Yasak kaldırılınca her şey geri gelir.
+Yasaklı hesabın eski mesajları ve verisi silinmez; karşı taraf görmeye devam eder.
+
+#### Gizlilik ve KVKK (önemli)
+
+Yöneticinin yazışmaları okuyabilmesi kullanıcıların kişisel verisine erişimdir. Bunun yasal
+dayanağı **Gizlilik ve KVKK Aydınlatma Metni**'nde açıkça yazılı olmalıdır (ör. "hizmet güvenliği,
+kötüye kullanımın önlenmesi ve şikâyet incelemesi için yazışmalar yetkili yönetici tarafından
+incelenebilir; her inceleme kayıt altına alınır"). Sitedeki gizlilik sayfasına bu cümleyi ekleyin;
+gerekirse bir hukukçuya danışın. Panelde her yazışma açılışı Kayıt sekmesine düşer; amaç dışı
+bakmamak ve yalnızca şikâyet/güvenlik gerektiğinde okumak sizin sorumluluğunuzdadır.
+
+### Yüklemeler onaylanana kadar karşı tarafa görünmez
+
+| Yükleyen | Onaydan önce kim görür | Reddedilince |
+| --- | --- | --- |
+| Kiracı dekontu | Yalnızca kiracı ve yönetici. Mülk sahibi göremez, bildirim de gitmez. | Ödeme "reddedildi"ye döner, gerekçe kiracıya gösterilir; kiracı yeniden yükler. |
+| Belge (iki taraf) | Yükleyen ve yönetici | Yükleyene bildirim ve gerekçe |
+| Mülk sahibi faturası | Mülk sahibi ve yönetici (dosya kiracıdan kilitli) | Mülk sahibine bildirim ve gerekçe |
+
+Onaylanınca karşı tarafa bildirim gider. Dosyanın kendisi depoda da kilitlidir
+(imzalı adres alınamaz). Sınırlar: faturanın tutar ve tarih bilgisi talep
+satırında durduğu için kiracı bunu görebilir, yalnızca dosya kilitlidir;
+mülk sahibi, yönetici onaylayana kadar kiracının ödemesini "henüz yapılmadı"
+gibi görür. Yönetici bu kuralları aşan bir işlem yapamaz; kararı yalnızca
+yönetici verebilir (`tests/admin.sql.spec.mjs`).
+
+---
+
+## Yayına alma (GitHub Pages, otomatik güncellenen)
+
+`.github/workflows/pages.yml` uygulamayı (`app/`) her push'ta derler ve yayınlar. Bir kez yapılacaklar:
+
+1. **Supabase**: yukarıdaki 1-3. bölümleri yap. *Project Settings → API* sayfasından **Project URL** ve **anon public** anahtarını kopyala (`service_role` anahtarını hiçbir yere yazma).
+2. **GitHub → Settings → Secrets and variables → Actions → Variables** altına iki değişken ekle:
+   - `SUPABASE_URL` = Project URL
+   - `SUPABASE_ANON_KEY` = anon public anahtar
+   - (isteğe bağlı) `CUSTOM_DOMAIN` = `kiracim.online`
+3. **GitHub → Settings → Pages → Source: "GitHub Actions"** seç.
+4. Değişiklikler **varsayılan dala** birleşince site yayınlanır (Actions sekmesinde "GitHub Pages" çalışması yeşil olur). Adres: `https://<kullanıcı>.github.io/project_evim/` ya da `CUSTOM_DOMAIN` verdiysen o alan adı.
+5. Supabase **Authentication → URL Configuration** altına bu adresi **Site URL** ve **Redirect URL** olarak ekle.
+6. Uygulamadan bir hesap aç, sonra yukarıdaki SQL ile kendini yönetici yap.
+
+Bundan sonra varsayılan dala her birleşmede site kendiliğinden güncellenir. Değişkenler boşsa site yerel hesap moduyla yayınlanır (veri yalnızca o tarayıcıda).
+
+---
+
 ## 8. Kontrol listesi
 
 - [ ] İki farklı tarayıcıda (ya da biri gizli pencerede) bir mülk sahibi, bir kiracı hesabı aç.
 - [ ] Mülk sahibi mülk ekler; açılan davet bağlantısını kiracıya gönderir.
 - [ ] Kiracı bağlantıyla kaydolur ve mülke bağlanır.
-- [ ] Kiracı dekont yükler; mülk sahibinin ekranında sayfa yenilenmeden görünür.
-- [ ] Mülk sahibi onaylar; kiracıya bildirim düşer.
+- [ ] Kiracı dekont yükler; **yönetici onaylayana kadar** mülk sahibi görmez, kiracı "İncelemede" etiketini görür.
+- [ ] Yönetici panelinde (`/admin`) dekontu onaylar; mülk sahibinin ekranında görünür ve bildirim düşer.
+- [ ] Yönetici bir dekontu gerekçeyle reddeder; kiracı gerekçeyi görür ve yeniden yükleyebilir.
+- [ ] Mülk sahibi ödemeyi onaylar; kiracıya bildirim düşer.
 - [ ] Telefondan ana ekrana ekle, uygulamayı kapatıp mesaj gönder: bildirim gelmeli.
 
 ---
@@ -201,3 +305,11 @@ metnini ve rıza ifadesini bir hukukçuya kontrol ettir.
 **Testler.** `npm install && npx playwright install chromium && npm test`.
 Veritabanı kuralları PGlite (WASM Postgres) ile, istemci akışları sahte bir
 Supabase ile test edilir; gerçek Supabase gerekmez.
+
+## Hostinger'a kurulum
+
+Hostinger paketi, Git ile otomatik dağıtım ve kontrol listesi için `docs/hostinger.md` dosyasına bakın.
+
+## Güvenlik (WAF ve alan adı koruması)
+
+Cloudflare WAF, alan adı kilidi/DNSSEC/DMARC ve Supabase bot koruması adımları için `docs/guvenlik.md` dosyasına bakın.

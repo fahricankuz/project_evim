@@ -150,6 +150,8 @@ create table if not exists public.messages (
   body        text not null,
   at          timestamptz not null default now()
 );
+-- Yazışmaya eklenen fotoğraf (depo yolu). Yalnızca evin üyeleri görür.
+alter table public.messages add column if not exists image_path text;
 
 create table if not exists public.documents (
   id          text primary key,
@@ -194,6 +196,53 @@ create table if not exists public.push_subscriptions (
   created_at  timestamptz not null default now()
 );
 
+-- v5: yönetici ve denetim.
+-- admins: yönetici hesapları. Satırı yalnızca SQL Editor'den (ya da service_role) eklenir.
+create table if not exists public.admins (
+  user_id    uuid primary key references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+-- reviews: müşterilerin yüklediği dekont, belge ve faturaların denetim kaydı.
+-- Yükleyen dışındaki taraf, yönetici onaylayana kadar yüklemeyi ve dosyasını göremez.
+create table if not exists public.reviews (
+  kind        text not null check (kind in ('payment','document','invoice')),
+  property_id text not null references public.properties(id) on delete cascade,
+  ref_id      text not null,                 -- ödeme: ay (2026-10); belge: belge kimliği; fatura: talep kimliği
+  uploader    uuid references public.profiles(id) on delete set null,
+  label       text not null default '',      -- dosya ya da belge adı
+  path        text,                          -- depo yolu (evim/<ev>/<dosya>)
+  amount      numeric,
+  status      text not null default 'pending' check (status in ('pending','approved','rejected')),
+  note        text,                          -- red gerekçesi
+  reviewed_by uuid references public.profiles(id) on delete set null,
+  reviewed_at timestamptz,
+  created_at  timestamptz not null default now(),
+  primary key (kind, property_id, ref_id)
+);
+create index if not exists reviews_status on public.reviews (status, created_at desc);
+create index if not exists reviews_path   on public.reviews (path);
+
+-- v6: yasaklama ve yönetici denetim kaydı.
+-- bans: askıya alınan hesaplar. Satırı yalnızca yönetici işlevi (admin_set_ban) yazar.
+create table if not exists public.bans (
+  user_id   uuid primary key references public.profiles(id) on delete cascade,
+  reason    text not null default '',
+  banned_by uuid references public.profiles(id) on delete set null,
+  banned_at timestamptz not null default now()
+);
+-- admin_audit: yöneticinin yaptığı her hassas işlem (yasaklama, mesaj okuma/silme, yükleme kararı).
+-- Yalnızca yönetici okur; hiç kimse (yönetici dahil) satırı değiştiremez ya da silemez.
+create table if not exists public.admin_audit (
+  id       bigserial primary key,
+  admin_id uuid references public.profiles(id) on delete set null,
+  action   text not null,
+  target   text not null default '',
+  detail   jsonb not null default '{}'::jsonb,
+  at       timestamptz not null default now()
+);
+create index if not exists admin_audit_at on public.admin_audit (at desc);
+
 create index if not exists memberships_user   on public.memberships (user_id);
 create index if not exists payments_prop      on public.payments (property_id);
 create index if not exists requests_prop      on public.requests (property_id);
@@ -223,6 +272,34 @@ returns boolean language sql stable security definer set search_path = public as
   select exists (select 1 from public.properties where id = pid and owner_id = auth.uid())
 $$;
 
+create or replace function public.is_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.admins where user_id = auth.uid())
+$$;
+grant execute on function public.is_admin() to authenticated;
+
+create or replace function public.is_banned()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.bans where user_id = auth.uid())
+$$;
+grant execute on function public.is_banned() to authenticated;
+
+-- Bu yükleme denetimden geçmemiş mi? (kayıt yoksa eski/denetimsiz sayılır, görünür)
+-- Uygulama belge ve fatura yollarını "sb:<yol>" biçiminde saklar; depodaki gerçek ad önek olmadan.
+create or replace function public.storage_path(v text)
+returns text language sql immutable as $$ select nullif(regexp_replace(coalesce(v, ''), '^sb:', ''), '') $$;
+
+create or replace function public.file_review_ok(pth text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select not exists (select 1 from public.reviews where path = pth and status <> 'approved')
+$$;
+
+create or replace function public.review_ok(k text, pid text, rid text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select not exists (select 1 from public.reviews
+                     where kind = k and property_id = pid and ref_id = rid and status <> 'approved')
+$$;
+
 -- İki kullanıcı en az bir evi paylaşıyor mu? (profil adlarını görebilmek için)
 create or replace function public.shares_property(other uuid)
 returns boolean language sql stable security definer set search_path = public as $$
@@ -250,6 +327,10 @@ alter table public.documents          enable row level security;
 alter table public.expenses           enable row level security;
 alter table public.notifications      enable row level security;
 alter table public.push_subscriptions enable row level security;
+alter table public.admins             enable row level security;
+alter table public.reviews            enable row level security;
+alter table public.bans               enable row level security;
+alter table public.admin_audit        enable row level security;
 
 -- Politikaları yeniden oluşturabilmek için önce sil.
 do $$
@@ -297,12 +378,17 @@ create policy invites_owner on public.invites for all to authenticated
   using (public.is_owner(property_id)) with check (public.is_owner(property_id) and created_by = auth.uid());
 
 -- ödemeler: üyeler okur ve yazar; kiracının ne yapabileceği tetikleyicide sınırlı
+-- Mülk sahibi, dekontu yönetici onaylayana kadar görmez (bkz. reviews).
 create policy payments_select on public.payments for select to authenticated
-  using (public.is_member(property_id));
+  using (public.is_admin()
+         or (public.is_member(property_id)
+             and (public.member_role(property_id) = 'tenant' or public.review_ok('payment', property_id, month))));
 create policy payments_insert on public.payments for insert to authenticated
   with check (public.is_member(property_id));
 create policy payments_update on public.payments for update to authenticated
-  using (public.is_member(property_id)) with check (public.is_member(property_id));
+  using (public.is_member(property_id)
+         and (public.member_role(property_id) = 'tenant' or public.review_ok('payment', property_id, month)))
+  with check (public.is_member(property_id));
 
 -- kira tutarı geçmişi: üyeler okur, sahibi yazar
 create policy rent_history_select on public.rent_history for select to authenticated
@@ -327,18 +413,35 @@ create policy messages_insert on public.messages for insert to authenticated
               and (from_role = 'system' or from_role = public.member_role(property_id)));
 
 -- belgeler
+-- Belgeyi yükleyen kendi belgesini her zaman görür; karşı taraf yönetici onayından sonra.
 create policy documents_select on public.documents for select to authenticated
-  using (public.is_member(property_id));
+  using (public.is_admin() or uploaded_by = auth.uid()
+         or (public.is_member(property_id) and public.review_ok('document', property_id, id)));
 create policy documents_insert on public.documents for insert to authenticated
   with check (public.is_member(property_id) and uploaded_by = auth.uid());
 create policy documents_update on public.documents for update to authenticated
-  using (public.is_owner(property_id) or uploaded_by = auth.uid());
+  using (uploaded_by = auth.uid() or (public.is_owner(property_id) and public.review_ok('document', property_id, id)));
 create policy documents_delete on public.documents for delete to authenticated
-  using (public.is_owner(property_id) or uploaded_by = auth.uid());
+  using (uploaded_by = auth.uid() or (public.is_owner(property_id) and public.review_ok('document', property_id, id)));
 
 -- giderler: kiracı hiç görmez
 create policy expenses_owner on public.expenses for all to authenticated
   using (public.is_owner(property_id)) with check (public.is_owner(property_id));
+
+-- yönetici: denetim için ilgili tabloları okur (yazma yetkisi yalnızca reviews kararında)
+create policy admins_self on public.admins for select to authenticated using (user_id = auth.uid());
+create policy profiles_admin on public.profiles for select to authenticated using (public.is_admin());
+create policy properties_admin on public.properties for select to authenticated using (public.is_admin());
+create policy memberships_admin on public.memberships for select to authenticated using (public.is_admin());
+create policy requests_admin on public.requests for select to authenticated using (public.is_admin());
+create policy invites_admin on public.invites for select to authenticated using (public.is_admin());
+create policy shared_admin on public.property_shared for select to authenticated using (public.is_admin());
+
+-- denetim kayıtları: yönetici hepsini okur ve karar verir; yükleyen kendi yüklemesinin durumunu görür.
+create policy reviews_select on public.reviews for select to authenticated
+  using (public.is_admin() or uploader = auth.uid());
+create policy reviews_decide on public.reviews for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
 
 -- bildirimler ve abonelikler: kişiye özel
 create policy notifications_own on public.notifications for select to authenticated
@@ -350,6 +453,26 @@ create policy notifications_delete on public.notifications for delete to authent
 create policy push_own on public.push_subscriptions for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+-- yasaklama kayıtları: yönetici hepsini, kullanıcı yalnızca kendininkini (askıya alındığını öğrenmek için) okur
+create policy bans_admin on public.bans for select to authenticated using (public.is_admin());
+create policy bans_self  on public.bans for select to authenticated using (user_id = auth.uid());
+create policy audit_admin on public.admin_audit for select to authenticated using (public.is_admin());
+
+-- Askıya alınmış hesap hiçbir içerik tablosunu okuyamaz ya da yazamaz (kısıtlayıcı politika:
+-- diğer tüm politikalara ek olarak sağlanması gerekir). profiles'ta yalnızca güncelleme kapanır;
+-- böylece uygulama oturumu açıp "askıya alındı" bilgisini gösterebilir.
+do $$
+declare t text;
+begin
+  foreach t in array array['properties','property_shared','memberships','invites','payments','rent_history',
+                           'requests','messages','documents','expenses','notifications','push_subscriptions','reviews'] loop
+    execute format('create policy not_banned on public.%I as restrictive for all to authenticated
+                    using (not public.is_banned()) with check (not public.is_banned())', t);
+  end loop;
+end $$;
+create policy not_banned on public.profiles as restrictive for update to authenticated
+  using (not public.is_banned()) with check (not public.is_banned());
+
 -- ---------------------------------------------------------------------
 -- 4. Koruma tetikleyicileri
 -- auth.uid() boşsa (sunucu, cron) denetim yapılmaz.
@@ -359,7 +482,7 @@ create or replace function public.guard_payments()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare r text := public.member_role(new.property_id);
 begin
-  if auth.uid() is null or r = 'landlord' then return new; end if;
+  if auth.uid() is null or r = 'landlord' or public.is_admin() then return new; end if;
   if new.status in ('approved','rejected') and (tg_op = 'INSERT' or old.status is distinct from new.status) then
     raise exception 'Ödemeyi yalnızca mülk sahibi onaylayabilir ya da reddedebilir' using errcode = '42501';
   end if;
@@ -519,6 +642,7 @@ declare
 begin
   select * into me from public.profiles where id = auth.uid();
   if me.id is null then raise exception 'Oturum açılmamış' using errcode = '42501'; end if;
+  if public.is_banned() then raise exception 'Hesap askıya alındı' using errcode = '42501'; end if;
   if me.role <> 'tenant' then raise exception 'Davetler kiracı hesapları içindir' using errcode = '22023'; end if;
 
   select * into inv from public.invites where code = upper(trim(invite_code)) for update;
@@ -591,12 +715,8 @@ declare
   pname text := public.prop_name(new.property_id);
   lurl  text := '#/mulk-sahibi/mulk/' || new.property_id || '/odeme';
 begin
-  if new.status in ('review','partial')
-     and (tg_op = 'INSERT' or old.status is distinct from new.status or old.amount is distinct from new.amount) then
-    perform public.notify_members(new.property_id, 'landlord', pname || ': dekont geldi',
-      new.month || ' kirası için ' || public.fmt_tl(new.amount) || (case when new.status = 'partial' then ' (kısmi)' else '' end) || ' ödendi.',
-      '#/kiraci/odemeler', lurl);
-  elsif new.status = 'approved' and (tg_op = 'INSERT' or old.status is distinct from 'approved') then
+  -- Dekont geldi bildirimi, yönetici onayladıktan sonra gider (bkz. on_review_change).
+  if new.status = 'approved' and (tg_op = 'INSERT' or old.status is distinct from 'approved') then
     perform public.notify_members(new.property_id, 'tenant', 'Ödemen onaylandı',
       new.month || ' kirası onaylandı.', '#/kiraci/odemeler', lurl);
   elsif new.status = 'rejected' and (tg_op = 'INSERT' or old.status is distinct from 'rejected') then
@@ -638,7 +758,7 @@ declare sender text;
 begin
   if new.from_role = 'system' then return new; end if;
   select display_name into sender from public.memberships where property_id = new.property_id and user_id = new.by_user;
-  perform public.notify_members(new.property_id, null, coalesce(nullif(sender, ''), 'Yeni mesaj'), new.body,
+  perform public.notify_members(new.property_id, null, coalesce(nullif(sender, ''), 'Yeni mesaj'), coalesce(nullif(new.body, ''), 'Fotoğraf gönderdi'),
     '#/kiraci/mesajlar', '#/mulk-sahibi/mulk/' || new.property_id || '/mesaj', new.by_user);
   return new;
 end $$;
@@ -714,7 +834,10 @@ begin
   select count(*) into before from public.notifications;
 
   for p in select * from public.properties loop
+    continue when p.start_date > today;                      -- sözleşme henüz başlamadı
     due := make_date(extract(year from today)::int, extract(month from today)::int, p.due_day);
+    -- İlk ayda vade, sözleşme başlangıcından önceye düşmez (yeni eklenen mülk için "kira gecikti" gitmez).
+    if to_char(p.start_date, 'YYYY-MM') = mkey and p.start_date > due then due := p.start_date; end if;
     select status into paid from public.payments where property_id = p.id and month = mkey;
 
     for mb in select * from public.memberships where property_id = p.id loop
@@ -800,25 +923,316 @@ on conflict (id) do nothing;
 drop policy if exists evim_read on storage.objects;
 drop policy if exists evim_write on storage.objects;
 drop policy if exists evim_delete on storage.objects;
+drop policy if exists evim_not_banned on storage.objects;
+-- Denetime bağlı dosyalar (dekont, belge, fatura): yükleyen ve yönetici her zaman, ev üyeleri onaydan sonra okur.
 create policy evim_read on storage.objects for select to authenticated
-  using (bucket_id = 'evim' and public.is_member((storage.foldername(name))[1]));
+  using (bucket_id = 'evim' and (
+    public.is_admin() or owner = auth.uid()
+    or (public.is_member((storage.foldername(name))[1])
+        and public.file_review_ok(storage.objects.name))));
 create policy evim_write on storage.objects for insert to authenticated
   with check (bucket_id = 'evim' and public.is_member((storage.foldername(name))[1]));
 create policy evim_delete on storage.objects for delete to authenticated
   using (bucket_id = 'evim' and public.is_owner((storage.foldername(name))[1]));
+create policy evim_not_banned on storage.objects as restrictive for all to authenticated
+  using (not public.is_banned()) with check (not public.is_banned());
 
 do $$
 declare t text;
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     foreach t in array array['properties','property_shared','memberships','payments','rent_history',
-                             'requests','messages','documents','expenses','notifications'] loop
+                             'requests','messages','documents','expenses','notifications','reviews'] loop
       if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = t) then
         execute format('alter publication supabase_realtime add table public.%I', t);
       end if;
     end loop;
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------
+-- 10. Yönetici denetimi
+-- Dekont, belge ve fatura yüklenince reviews'a "pending" kayıt düşer; yönetici
+-- onaylayana kadar yükleyen dışındaki taraf bunları (ve dosyalarını) göremez.
+-- Aynı dosya yeniden yüklenirse denetim baştan başlar.
+-- ---------------------------------------------------------------------
+
+create or replace function public.upsert_review(
+  k text, pid text, rid text, who uuid, lbl text, pth text, amt numeric)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  -- guard_reviews bu çağrıyı (yükleme sonrası sıfırlama) engellemesin.
+  perform set_config('kiracim.sistem', '1', true);
+  insert into public.reviews (kind, property_id, ref_id, uploader, label, path, amount)
+  values (k, pid, rid, who, coalesce(lbl, ''), pth, amt)
+  on conflict (kind, property_id, ref_id) do update
+    set uploader = excluded.uploader, label = excluded.label, path = excluded.path, amount = excluded.amount,
+        status = 'pending', note = null, reviewed_by = null, reviewed_at = null, created_at = now();
+  perform set_config('kiracim.sistem', '0', true);
+end $$;
+
+-- Dekont: kiracı yükleyince ya da dekont/tutar değişince.
+create or replace function public.track_payment_review()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if public.member_role(new.property_id) is not distinct from 'landlord' or public.is_admin() then return new; end if;
+  if new.status not in ('review','partial') then return new; end if;
+  if tg_op = 'INSERT'
+     or new.receipt_path is distinct from old.receipt_path
+     or new.receipt_name is distinct from old.receipt_name
+     or new.amount is distinct from old.amount then
+    perform public.upsert_review('payment', new.property_id, new.month, auth.uid(), new.receipt_name, new.receipt_path, new.amount);
+  end if;
+  return new;
+end $$;
+drop trigger if exists track_payment_review on public.payments;
+create trigger track_payment_review after insert or update on public.payments
+  for each row execute function public.track_payment_review();
+
+-- Belge: yükleyen kim olursa olsun.
+create or replace function public.track_document_review()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' or new.path is distinct from old.path or new.name is distinct from old.name then
+    perform public.upsert_review('document', new.property_id, new.id, coalesce(new.uploaded_by, auth.uid()), new.name, public.storage_path(new.path), null);
+  end if;
+  return new;
+end $$;
+drop trigger if exists track_document_review on public.documents;
+create trigger track_document_review after insert or update on public.documents
+  for each row execute function public.track_document_review();
+
+-- Fatura: mülk sahibi talebe fatura eklediğinde.
+create or replace function public.track_invoice_review()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.invoice is null or public.is_admin() then return new; end if;
+  if tg_op = 'INSERT' or (new.invoice -> 'path') is distinct from (old.invoice -> 'path')
+     or (new.invoice -> 'amount') is distinct from (old.invoice -> 'amount') then
+    perform public.upsert_review('invoice', new.property_id, new.id, auth.uid(), coalesce(new.invoice ->> 'name', 'fatura'),
+                                 public.storage_path(new.invoice ->> 'path'), nullif(new.invoice ->> 'amount', '')::numeric);
+  end if;
+  return new;
+end $$;
+drop trigger if exists track_invoice_review on public.requests;
+create trigger track_invoice_review after insert or update on public.requests
+  for each row execute function public.track_invoice_review();
+
+-- Yalnızca yönetici karar verir; karar alanları dışında bir şey değişmez.
+create or replace function public.guard_reviews()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or coalesce(current_setting('kiracim.sistem', true), '0') = '1' then return new; end if;
+  if not public.is_admin() then
+    raise exception 'Denetim kararını yalnızca yönetici verebilir' using errcode = '42501';
+  end if;
+  if new.kind is distinct from old.kind or new.property_id is distinct from old.property_id or new.ref_id is distinct from old.ref_id
+     or new.uploader is distinct from old.uploader or new.label is distinct from old.label
+     or new.path is distinct from old.path or new.amount is distinct from old.amount then
+    raise exception 'Yüklemenin kendisi değiştirilemez' using errcode = '42501';
+  end if;
+  if new.status = 'rejected' and coalesce(btrim(new.note), '') = '' then
+    raise exception 'Red için gerekçe yazılmalı' using errcode = '22023';
+  end if;
+  if new.status is distinct from old.status then
+    new.reviewed_by := auth.uid();
+    new.reviewed_at := now();
+  end if;
+  return new;
+end $$;
+drop trigger if exists guard_reviews on public.reviews;
+create trigger guard_reviews before update on public.reviews
+  for each row execute function public.guard_reviews();
+
+-- Karar sonrası: ilgili kayda yansıt ve bildirim gönder.
+create or replace function public.on_review_change()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare pname text := public.prop_name(new.property_id);
+begin
+  if new.status is not distinct from old.status or new.status = 'pending' then return new; end if;
+
+  if new.kind = 'payment' then
+    if new.status = 'approved' then
+      perform public.notify_members(new.property_id, 'landlord', pname || ': dekont geldi',
+        new.ref_id || ' kirası için ' || public.fmt_tl(coalesce(new.amount, 0)) || ' ödendi.',
+        '#/kiraci/odemeler', '#/mulk-sahibi/mulk/' || new.property_id || '/odeme', null);
+    else
+      -- Reddedilen dekont kiracıya gerekçesiyle döner; kiracı yeniden yükleyebilir.
+      update public.payments set status = 'rejected', reject_reason = 'Denetim: ' || new.note
+       where property_id = new.property_id and month = new.ref_id and status in ('review','partial');
+    end if;
+
+  elsif new.kind = 'document' then
+    if new.status = 'approved' then
+      perform public.notify_members(new.property_id, null, pname || ': yeni belge', new.label,
+        '#/kiraci/belgeler', '#/mulk-sahibi/mulk/' || new.property_id || '/belge', new.uploader);
+    elsif new.uploader is not null then
+      insert into public.notifications (user_id, property_id, title, body, url)
+      values (new.uploader, new.property_id, 'Belgen kabul edilmedi', new.label || ': ' || new.note,
+              case when public.member_role(new.property_id) = 'landlord' then '#/mulk-sahibi/mulk/' || new.property_id || '/belge' else '#/kiraci/belgeler' end);
+    end if;
+
+  elsif new.kind = 'invoice' then
+    if new.status = 'approved' then
+      perform public.notify_members(new.property_id, 'tenant', pname || ': fatura eklendi', new.label,
+        '#/kiraci/talepler/' || new.ref_id, '', null);
+    elsif new.uploader is not null then
+      insert into public.notifications (user_id, property_id, title, body, url)
+      values (new.uploader, new.property_id, 'Faturan kabul edilmedi', new.label || ': ' || new.note,
+              '#/mulk-sahibi/mulk/' || new.property_id || '/talep');
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists on_review_change on public.reviews;
+create trigger on_review_change after update on public.reviews
+  for each row execute function public.on_review_change();
+
+-- Yönetici paneli: tüm kullanıcılar (e-postayla). Yalnızca yöneticiye döner.
+drop function if exists public.admin_users();
+create or replace function public.admin_users()
+returns table (id uuid, email text, name text, role text, phone text, created_at timestamptz,
+               is_admin boolean, subscribed boolean, expires_at timestamptz,
+               banned boolean, ban_reason text, banned_at timestamptz)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Yönetici yetkisi gerekli' using errcode = '42501'; end if;
+  return query
+    select p.id, u.email::text, p.name, p.role, p.phone, p.created_at,
+           exists (select 1 from public.admins a where a.user_id = p.id),
+           coalesce(s.active and (s.expires_at is null or s.expires_at > now()), false),
+           s.expires_at,
+           b.user_id is not null, b.reason, b.banned_at
+    from public.profiles p
+    left join auth.users u on u.id = p.id
+    left join public.subscriptions s on s.user_id = p.id
+    left join public.bans b on b.user_id = p.id
+    order by p.created_at desc;
+end $$;
+grant execute on function public.admin_users() to authenticated;
+
+-- Yönetici işlemi kaydı (yalnızca bu dosyadaki yönetici işlevleri çağırır).
+create or replace function public.audit(act text, tgt text, det jsonb default '{}'::jsonb)
+returns void language sql security definer set search_path = public as $$
+  insert into public.admin_audit (admin_id, action, target, detail) values (auth.uid(), act, tgt, coalesce(det, '{}'::jsonb))
+$$;
+revoke execute on function public.audit(text, text, jsonb) from public, authenticated;
+
+-- Yasakla / yasağı kaldır. Yönetici kendini ya da başka bir yöneticiyi yasaklayamaz.
+-- Yasak, (1) bans satırıyla tüm verilere erişimi keser, (2) Supabase Auth'ta girişi ve token yenilemeyi
+-- kapatır, (3) açık oturumları siler. Üçüncü adım Supabase dışı ortamda (testte) atlanır.
+create or replace function public.admin_set_ban(uid uuid, ban boolean, why text default '')
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Yönetici yetkisi gerekli' using errcode = '42501'; end if;
+  if uid = auth.uid() then raise exception 'Kendini yasaklayamazsın' using errcode = '22023'; end if;
+  if exists (select 1 from public.admins where user_id = uid) then raise exception 'Yönetici yasaklanamaz' using errcode = '22023'; end if;
+  if not exists (select 1 from public.profiles where id = uid) then raise exception 'Kullanıcı bulunamadı' using errcode = 'P0002'; end if;
+  if ban then
+    if coalesce(trim(why), '') = '' then raise exception 'Yasaklama için gerekçe yaz' using errcode = '22023'; end if;
+    insert into public.bans (user_id, reason, banned_by) values (uid, trim(why), auth.uid())
+    on conflict (user_id) do update set reason = excluded.reason, banned_by = excluded.banned_by, banned_at = now();
+  else
+    delete from public.bans where user_id = uid;
+  end if;
+  begin
+    update auth.users set banned_until = case when ban then 'infinity'::timestamptz else null end where id = uid;
+    if ban then delete from auth.sessions where user_id = uid; end if;
+  exception when undefined_column or undefined_table then null;
+  end;
+  perform public.audit(case when ban then 'user.ban' else 'user.unban' end, uid::text, jsonb_build_object('reason', coalesce(trim(why), '')));
+end $$;
+grant execute on function public.admin_set_ban(uuid, boolean, text) to authenticated;
+
+-- Yazışma listesi: mülk başına son mesaj ve sayı (içerik değil, özet). Yalnızca yöneticiye döner.
+create or replace function public.admin_threads()
+returns table (property_id text, name text, owner_id uuid, owner_name text, tenants text,
+               msg_count bigint, last_at timestamptz, last_body text)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Yönetici yetkisi gerekli' using errcode = '42501'; end if;
+  return query
+    select p.id, p.name, p.owner_id, o.name,
+           coalesce((select string_agg(coalesce(nullif(m.display_name, ''), pr.name), ', ')
+                     from public.memberships m left join public.profiles pr on pr.id = m.user_id
+                     where m.property_id = p.id and m.role = 'tenant'), ''),
+           (select count(*) from public.messages x where x.property_id = p.id),
+           lm.at, lm.body
+    from public.properties p
+    left join public.profiles o on o.id = p.owner_id
+    left join lateral (select x.at, x.body from public.messages x where x.property_id = p.id order by x.at desc limit 1) lm on true
+    where exists (select 1 from public.messages x where x.property_id = p.id)
+    order by lm.at desc;
+end $$;
+grant execute on function public.admin_threads() to authenticated;
+
+-- Bir mülkün yazışması. Her okuma denetim kaydına yazılır.
+create or replace function public.admin_messages(pid text, lim int default 300)
+returns table (id text, at timestamptz, from_role text, by_user uuid, by_name text, body text, image_path text)
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Yönetici yetkisi gerekli' using errcode = '42501'; end if;
+  perform public.audit('messages.view', pid);
+  return query
+    select m.id, m.at, m.from_role, m.by_user, pr.name, m.body, m.image_path
+    from public.messages m left join public.profiles pr on pr.id = m.by_user
+    where m.property_id = pid
+    order by m.at desc limit greatest(1, least(coalesce(lim, 300), 1000));
+end $$;
+grant execute on function public.admin_messages(text, int) to authenticated;
+
+-- Uygunsuz mesajı siler (içerik kaydı tutulmaz; kim, hangi mülk, ne zaman denetim kaydında kalır).
+create or replace function public.admin_delete_message(mid text)
+returns void language plpgsql security definer set search_path = public as $$
+declare m public.messages;
+begin
+  if not public.is_admin() then raise exception 'Yönetici yetkisi gerekli' using errcode = '42501'; end if;
+  select * into m from public.messages where id = mid;
+  if m.id is null then raise exception 'Mesaj bulunamadı' using errcode = 'P0002'; end if;
+  delete from public.messages where id = mid;
+  perform public.audit('message.delete', m.property_id, jsonb_build_object('message', mid, 'by', m.by_user));
+end $$;
+grant execute on function public.admin_delete_message(text) to authenticated;
+
+create or replace function public.admin_audit_log(lim int default 200)
+returns table (id bigint, at timestamptz, admin_name text, action text, target text, detail jsonb)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Yönetici yetkisi gerekli' using errcode = '42501'; end if;
+  return query
+    select a.id, a.at, pr.name, a.action, a.target, a.detail
+    from public.admin_audit a left join public.profiles pr on pr.id = a.admin_id
+    order by a.at desc, a.id desc limit greatest(1, least(coalesce(lim, 200), 1000));
+end $$;
+grant execute on function public.admin_audit_log(int) to authenticated;
+
+-- Yükleme kararları da denetim kaydına düşer.
+create or replace function public.audit_review()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.status is distinct from old.status and new.status in ('approved','rejected') and auth.uid() is not null then
+    perform public.audit('review.' || new.status, new.kind || ':' || new.property_id || ':' || new.ref_id,
+                         jsonb_build_object('note', new.note));
+  end if;
+  return new;
+end $$;
+drop trigger if exists audit_review on public.reviews;
+create trigger audit_review after update on public.reviews
+  for each row execute function public.audit_review();
+
+-- Denetim kaydı olmayan eski yüklemeler (bu bölüm eklenmeden önce yüklenenler) onaylı sayılır.
+insert into public.reviews (kind, property_id, ref_id, uploader, label, path, amount, status, note)
+select 'document', property_id, id, uploaded_by, name, public.storage_path(path), null, 'approved', null from public.documents
+on conflict do nothing;
+insert into public.reviews (kind, property_id, ref_id, uploader, label, path, amount, status, note)
+select 'payment', property_id, month, null, receipt_name, receipt_path, amount, 'approved', null
+from public.payments where status in ('review','partial','approved','rejected') and (receipt_path is not null or receipt_name <> '')
+on conflict do nothing;
+insert into public.reviews (kind, property_id, ref_id, uploader, label, path, amount, status, note)
+select 'invoice', property_id, id, null, coalesce(invoice ->> 'name', 'fatura'), public.storage_path(invoice ->> 'path'),
+       nullif(invoice ->> 'amount', '')::numeric, 'approved', null
+from public.requests where invoice is not null
+on conflict do nothing;
 
 -- ---------------------------------------------------------------------
 -- Yetkiler (Supabase varsayılanlarıyla aynı; açıkça yazıldı)
@@ -956,3 +1370,13 @@ drop policy if exists device_own on public.device_tokens;
 create policy device_own on public.device_tokens for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 grant select, insert, update, delete on public.device_tokens to authenticated;
+
+-- ---------------------------------------------------------------------
+-- İç işlevlerin dışarıdan çağrılmasını kapat.
+-- Supabase, public şemasındaki işlevleri RPC olarak herkese (anon, authenticated) açar; security definer
+-- olan bu üçü RLS'yi aşar. Yabancı biri bildirim gönderebilir, bir yüklemenin denetim durumunu sıfırlayabilirdi.
+-- Tetikleyiciler (security definer) sahibin yetkisiyle çalışır; bu kapanıştan etkilenmez.
+-- ---------------------------------------------------------------------
+revoke execute on function public.notify_members(text, text, text, text, text, text, uuid, text) from public, anon, authenticated;
+revoke execute on function public.upsert_review(text, text, text, uuid, text, text, numeric) from public, anon, authenticated;
+revoke execute on function public.prop_name(text) from public, anon, authenticated;

@@ -30,6 +30,7 @@ const L  = '00000000-0000-0000-0000-00000000000a';   // ev sahibi
 const T1 = '00000000-0000-0000-0000-00000000000b';   // kiracı
 const T2 = '00000000-0000-0000-0000-00000000000c';   // ev arkadaşı
 const O  = '00000000-0000-0000-0000-00000000000d';   // yabancı
+const A  = '00000000-0000-0000-0000-00000000000e';   // yönetici
 
 let db;
 const as = async uid => db.exec(`reset role; select set_config('request.jwt.claim.sub', '${uid || ''}', false);` + (uid ? ' set role authenticated;' : ''));
@@ -54,7 +55,9 @@ test('kayıt olunca rolüyle profil açılır', async () => {
     ($1, 'ev@ornek.com', '{"name":"Ev Sahibi","role":"landlord"}'),
     ($2, 'k1@ornek.com', '{"name":"Kiracı Bir","role":"tenant"}'),
     ($3, 'k2@ornek.com', '{"name":"Kiracı İki","role":"tenant"}'),
-    ($4, 'x@ornek.com',  '{"name":"Yabancı","role":"landlord"}')`, [L, T1, T2, O]);
+    ($4, 'x@ornek.com',  '{"name":"Yabancı","role":"landlord"}'),
+    ($5, 'admin@ornek.com', '{"name":"Yönetici","role":"tenant"}')`, [L, T1, T2, O, A]);
+  await db.exec(`insert into public.admins (user_id) values ('${A}')`);
   const rows = await q('select id, role, name from public.profiles order by name');
   expect(rows.find(r => r.id === L).role).toBe('landlord');
   expect(rows.find(r => r.id === T1).role).toBe('tenant');
@@ -106,6 +109,13 @@ test('kiracı dekont yükler ama onaylayamaz; ev sahibi onaylar; bildirimler iki
   await db.query(`insert into public.payments (property_id, month, status, amount, receipt_name) values ('p1', '2026-01', 'review', 30000, 'd.pdf')`);
   await expect(db.query(`update public.payments set status = 'approved' where property_id = 'p1' and month = '2026-01'`)).rejects.toThrow(/yalnızca mülk sahibi/);
   await expect(db.query(`insert into public.payments (property_id, month, status, amount) values ('p1', '2026-02', 'approved', 1)`)).rejects.toThrow(/yalnızca mülk sahibi/);
+
+  // Yönetici onaylayana kadar mülk sahibi dekontu göremez, onaylayamaz.
+  await as(L);
+  expect(await q(`select * from public.payments where property_id = 'p1'`)).toEqual([]);
+  expect((await notes(L)).some(n => /dekont geldi/.test(n.title))).toBe(false);
+  await as(A);
+  await db.query(`update public.reviews set status = 'approved' where kind = 'payment' and property_id = 'p1' and ref_id = '2026-01'`);
 
   await as(L);
   await db.query(`update public.payments set status = 'approved', approved_at = now() where property_id = 'p1' and month = '2026-01'`);
